@@ -9,6 +9,8 @@ from src.utils import combine_losses
 
 
 def train_literal_model(args, literal_dataset: None, kge_model: None, device: None):
+    """
+    Method to train Literal Embedding model standalone when a Pre-trained model is provided"""
 
     kge_model = kge_model.to(device)
 
@@ -55,22 +57,23 @@ def train_model(
     Trains the model and logs the loss.
 
     Parameters:
-    - model: KECI model instance
+    - model: (Any ) Knowledge Graph Embedding model instance
     - train_dataloader: Dataloader for training data
     - args: Configuration arguments
-    - device: Computation device (CPU or GPU)
     - literal_dataset: Literal dataset (optional)
     - Literal_model: Literal model instance (optional)
     - optimize_with_literal: Flag to optimize with literals
 
     Returns:
     - loss_log: Dictionary of loss logs
-    - lr_keci: Learning rate for KECI model
-    - lr_literal: Learning rate for Literal model
     """
+
     loss_log = {"ent_loss": []}
     lit_y, lit_entities, lit_properties = None, None, None
+    bce_loss_fn = torch.nn.BCEWithLogitsLoss()
     if args.optimize_with_literals:
+
+        # intialize loss logs and optimizers for Literal and KGE odel
         loss_log["lit_loss"] = []
         optimizer = optim.Adam(
             [
@@ -79,12 +82,13 @@ def train_model(
             ]
         )
     else:
+        # optimzer when only KGE model is being trained
         optimizer = optim.Adam(
             [
                 {"params": model.parameters(), "lr": args.lr},
             ]
         )
-    bce_loss_fn = torch.nn.BCEWithLogitsLoss()
+    
     for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
         ent_loss = 0
         lit_loss = 0
@@ -93,6 +97,7 @@ def train_model(
 
         if args.optimize_with_literals:
             for batch in train_dataloader:
+
                 # begin entity emebedding model training
                 train_X, train_y = batch
                 train_X, train_y = train_X.to(device), train_y.to(device)
@@ -100,15 +105,20 @@ def train_model(
                 yhat_e = model(train_X)
                 ent_loss_batch = bce_loss_fn(yhat_e, train_y)
 
-                # begin literal embedding model training
-                batch_literal_entity_indices = train_X[:, 0].long()
-                batch_literal_entity_indices = batch_literal_entity_indices.to("cpu")
+                # prepare batch for  literal embedding model training
+                # Build literal triples based on entity triples 
+                # Extract data properties from entity triple (train_X) 
+
+                batch_literal_entity_indices = train_X[:, 0].long().to("cpu")
 
                 batch_literals = literal_dataset.lit_value_tensor[
                     batch_literal_entity_indices
                 ].to(device)
+
                 batch_size, num_data_props_batch = batch_literals.shape
                 batch_literal_entity_indices = batch_literal_entity_indices.to(device)
+
+                #randomly sample data properties
                 if random_literals:
                     random_data_props = torch.randint(
                         0, num_data_props_batch, (batch_size,)
@@ -116,13 +126,17 @@ def train_model(
                     y_vals = (
                         batch_literals.gather(1, random_data_props.view(-1, 1))
                         .squeeze(1)
-                        .to(device)
                     )
                     ent_ebds = model.entity_embeddings(batch_literal_entity_indices)
                     yhat = Literal_model.forward(ent_ebds, random_data_props)
                     lit_loss_batch = F.l1_loss(yhat, y_vals)
+                    
                 else:
+                    # combine the epoch loss on all the data proeprties 
+                    # if an entity does not have some literal values, it is set to 0
                     ent_ebds = model.entity_embeddings(batch_literal_entity_indices)
+
+                    #average literal loss on all data properties
                     lit_loss_batch = (
                         sum(
                             F.l1_loss(
@@ -139,8 +153,10 @@ def train_model(
                 # begin combined loss procedure
 
                 # Define weights for each loss
-                batch_loss = combine_losses(ent_loss_batch, lit_loss_batch)
+                # w1, w2 = 0.7, 0.3
                 # batch_loss = (w1 * ent_loss_batch) + (w2 * lit_loss_batch)
+                batch_loss = combine_losses(ent_loss_batch, lit_loss_batch)
+                
 
                 # backward loss and optimization step
                 batch_loss.backward()
@@ -159,6 +175,7 @@ def train_model(
             loss_log["lit_loss"].append(avg_epoch_loss_lit.item())
 
         else:
+            # trainning step only for KGE model ( without Literal Model)
             for batch in train_dataloader:
                 train_X, train_y = batch
                 train_X, train_y = train_X.to(device), train_y.to(device)
