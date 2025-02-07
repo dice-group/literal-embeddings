@@ -102,12 +102,13 @@ def train_model(
 
                 # begin literal embedding model training
                 batch_literal_entity_indices = train_X[:, 0].long()
+                batch_literal_entity_indices = batch_literal_entity_indices.to("cpu")
 
                 batch_literals = literal_dataset.lit_value_tensor[
                     batch_literal_entity_indices
-                ]
+                ].to(device)
                 batch_size, num_data_props_batch = batch_literals.shape
-
+                batch_literal_entity_indices = batch_literal_entity_indices.to(device)
                 if random_literals:
                     random_data_props = torch.randint(
                         0, num_data_props_batch, (batch_size,)
@@ -116,9 +117,6 @@ def train_model(
                         batch_literals.gather(1, random_data_props.view(-1, 1))
                         .squeeze(1)
                         .to(device)
-                    )
-                    batch_literal_entity_indices = batch_literal_entity_indices.to(
-                        device
                     )
                     ent_ebds = model.entity_embeddings(batch_literal_entity_indices)
                     yhat = Literal_model.forward(ent_ebds, random_data_props)
