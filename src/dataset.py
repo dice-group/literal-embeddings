@@ -5,30 +5,35 @@ import torch
 
 
 class LiteralData:
-    def __init__(self, dataset_dir: str, ent_idx, filter_df=False):
+    def __init__(self, dataset_dir: str, ent_idx, filter_df=False, top_k = 10):
+
         self.train_file_path = os.path.join(dataset_dir, "train.txt")
         self.test_file_path = os.path.join(dataset_dir, "test.txt")
         self.val_file_path = os.path.join(dataset_dir, "valid.txt")
         self.ent_idx = {value: idx for idx, value in ent_idx["entity"].items()}
+
         df = pd.read_csv(
             self.train_file_path,
             sep="\t",
             header=None,
             names=["head", "relation", "tail"],
         )
+
         if filter_df:
-            top_10_items = df["relation"].value_counts().nlargest(10).index
+            top_k_rels = df["relation"].value_counts().nlargest(top_k).index
 
             # Step 2: Filter the DataFrame to include only rows with these top 10 items
-            df = df[df["relation"].isin(top_10_items)]
-            self.train_rels = top_10_items
+            df = df[df["relation"].isin(top_k_rels)]
+            self.train_rels = top_k_rels
         else:
             self.train_rels = df["relation"].unique().tolist()
+
         df = df[df["head"].isin(self.ent_idx)]
         df["tail"] = df["tail"].astype(float)
 
         self.unique_relations = df["relation"].unique()
         self.num_data_properties = len(self.unique_relations)
+        
         self.data_property_to_idx = {
             relation: idx for idx, relation in enumerate(self.unique_relations)
         }

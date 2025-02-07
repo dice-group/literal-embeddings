@@ -13,6 +13,7 @@ def train_literal_model(args, literal_dataset: None, kge_model: None, device: No
     Method to train Literal Embedding model standalone when a Pre-trained model is provided"""
 
     kge_model = kge_model.to(device)
+    loss_log = {"lit_loss": []}
 
     Literal_model = LiteralEmbeddings(
         num_of_data_properties=literal_dataset.num_data_properties,
@@ -33,15 +34,16 @@ def train_literal_model(args, literal_dataset: None, kge_model: None, device: No
 
     optimizer = optim.Adam(Literal_model.parameters(), lr=args.lit_lr)
 
-    for epoch in (tqdm_bar := tqdm(range(200))):
+    for epoch in (tqdm_bar := tqdm(range(args.lit_epochs))):
         yhat = Literal_model(ent_ebds, lit_properties)
         lit_loss = F.l1_loss(yhat, lit_y)
         lit_loss.backward()
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
         tqdm_bar.set_postfix_str(f" loss_lit={lit_loss:.5f} ")
+        loss_log["lit_loss"].append(lit_loss.item())
 
-    return Literal_model
+    return Literal_model, loss_log
 
 
 def train_model(
@@ -93,9 +95,9 @@ def train_model(
         ent_loss = 0
         lit_loss = 0
         model.train()
-        Literal_model.train()
-
+        
         if args.optimize_with_literals:
+            Literal_model.train()
             for batch in train_dataloader:
 
                 # begin entity emebedding model training
@@ -129,7 +131,7 @@ def train_model(
                     )
                     ent_ebds = model.entity_embeddings(batch_literal_entity_indices)
                     yhat = Literal_model.forward(ent_ebds, random_data_props)
-                    lit_loss_batch = F.l1_loss(yhat, y_vals)
+                    lit_loss_batch = F.mse_loss(yhat, y_vals)
                     
                 else:
                     # combine the epoch loss on all the data proeprties 
@@ -139,7 +141,7 @@ def train_model(
                     #average literal loss on all data properties
                     lit_loss_batch = (
                         sum(
-                            F.l1_loss(
+                            F.mse_loss(
                                 Literal_model.forward(
                                     ent_ebds, torch.full((batch_size,), i)
                                 ),

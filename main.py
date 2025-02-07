@@ -16,9 +16,13 @@ from dicee.knowledge_graph_embeddings import KGE
 from dicee.models import Keci, TransE
 from dicee.static_funcs import read_or_load_kg, store
 from torch.utils.data import DataLoader
-
+from src.dataset import LiteralData
+from dicee.static_funcs import intialize_model
 from src.trainer import train_literal_model, train_model
 from src.utils import evaluate_lit_preds
+from src.dataset import LiteralData
+from src.model import LiteralEmbeddings
+
 
 # Configuration setup
 args = Namespace()
@@ -34,38 +38,15 @@ args.num_epochs = 150
 args.embedding_dim = 128
 args.lr = 0.05
 args.lit_dataset_dir = "KGs/FamilyL"
-args.optimize_with_literals = True
+args.optimize_with_literals = False
 args.lit_lr = 0.001
+args.lit_epochs = 500
 args.save_embeddings_as_csv = False
-args.save_experiment = False
+args.save_experiment = True
+args.pretrained_kge = True
+args.pretrained_kge_path = "Experiments/2025-02-07_12-07-54-709"
 
 
-def update_args_with_cli(args):
-    parser = argparse.ArgumentParser(description="Override default arguments")
-    parser.add_argument("--dataset_dir", type=str, help="Dataset directory")
-    parser.add_argument("--lit_dataset_dir", type=str, help="Literal Dataset directory")
-    parser.add_argument("--batch_size", type=int, help="Batch size")
-    parser.add_argument("--num_epochs", type=int, help="Number of epochs")
-    parser.add_argument("--embedding_dim", type=int, help="Embedding dimensions")
-    parser.add_argument("--lr", type=float, help="Learning rate")
-    parser.add_argument(
-        "--optimize_with_literals", type=bool, help="Optimize with literals"
-    )
-    parser.add_argument("--lit_lr", type=float, help="Learning rate for literals")
-    parser.add_argument(
-        "--save_embeddings_as_csv", type=bool, help="Save embeddings as CSV"
-    )
-    parser.add_argument(
-        "--save_experiment", type=bool, help="Save Experiement  Configs and Results"
-    )
-    cli_args = parser.parse_args()
-
-    # Update only the provided CLI arguments
-    for key, value in vars(cli_args).items():
-        if value is not None:  # Only overwrite if a new value is provided
-            setattr(args, key, value)
-
-    return args
 
 
 def main(args):
@@ -108,8 +89,7 @@ def main(args):
     Literal_model = None
 
     if args.optimize_with_literals:
-        from src.dataset import LiteralData
-        from src.model import LiteralEmbeddings
+        
 
         literal_dataset = LiteralData(
             dataset_dir=args.lit_dataset_dir, ent_idx=entity_dataset.entity_to_idx
@@ -148,7 +128,7 @@ def main(args):
         )
 
         print("Training Literal model After Combined Entity-Literal Training")
-        Lit_model = train_literal_model(
+        Lit_model, _ = train_literal_model(
             args=args, literal_dataset=literal_dataset, kge_model=model, device=device
         )
         print(" Perfromance of Literal Model on Enhanced Entitiy Embeddings ")
@@ -159,6 +139,10 @@ def main(args):
             literal_model=Lit_model,
             device=device,
         )
+        if args.save_experiment:
+            lit_results_file_path = os.path.join(exp_path_name, "lit_results.json")
+            with open(lit_results_file_path, "w") as f:
+                json.dump(lit_results.to_dict(orient="records"), f, indent=4)
 
     if args.save_experiment:
         store(
@@ -177,17 +161,79 @@ def main(args):
 
         exp_configs = vars(args)
 
-        with open(os.path.join(exp_path_name, "configs.json"), "w") as f:
+        with open(os.path.join(exp_path_name, "configuration.json"), "w") as f:
             json.dump(exp_configs, f, indent=4)
 
         with open(os.path.join(exp_path_name, "lp_results.json"), "w") as f:
             json.dump(evaluator.report, f, indent=4)
 
+        
+
+def train_with_kge(args):
+
+    print("Training Literal Embedding model using pre-trained KGE model at %s" %args.pretrained_kge_path)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+
+    try:
+        config_path = os.path.join(args.pretrained_kge_path, 'configuration.json')
+        model_path = os.path.join(args.pretrained_kge_path, 'model.pt')
+        entity_to_idx_path = os.path.join(args.pretrained_kge_path, 'entity_to_idx.csv')
+    
+        # Load configuration
+        with open(config_path) as json_file:
+            configs = json.load(json_file)
+
+        # Load model weights
+        weights = torch.load(model_path, map_location=torch.device('cpu'), weights_only= True)
+
+        # Initialize the model
+        kge_model, _ = intialize_model(configs, 0)
+
+        # Load the model weights into the model
+        kge_model.load_state_dict(weights)
+
+        e2idx_df = pd.read_csv(entity_to_idx_path, index_col=0)
+        entity_to_idx = e2idx_df.to_dict(orient='dict')
+            
+
+    except:
+        print(" Building the KGE model failed: Fix args ")
+        exit(0)
+
+    literal_dataset = LiteralData(
+        dataset_dir=args.lit_dataset_dir, ent_idx=entity_to_idx
+    )
+    Lit_model, loss_log = train_literal_model(
+            args=args, literal_dataset=literal_dataset, kge_model=kge_model, device=device
+        )
+    
+    lit_results = evaluate_lit_preds(
+        literal_dataset,
+        dataset_type="test",
+        model=kge_model,
+        literal_model=Lit_model,
+        device=device,
+    )
+    if args.save_experiment:
+        exp_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
+        exp_path_name = f"Experiments/{exp_date_time}"
+        os.makedirs(exp_path_name, exist_ok=True)
         lit_results_file_path = os.path.join(exp_path_name, "lit_results.json")
         with open(lit_results_file_path, "w") as f:
             json.dump(lit_results.to_dict(orient="records"), f, indent=4)
+        with open(os.path.join(exp_path_name, "configuration.json"), "w") as f:
+            json.dump(configs, f, indent=4)
+        
+        df_loss_log = pd.DataFrame.from_dict(loss_log, orient="index").transpose()
+        df_loss_log.to_csv(
+            os.path.join(exp_path_name, "loss_log.tsv"), sep="\t", index=False
+        )
+
 
 
 if __name__ == "__main__":
-    args = update_args_with_cli(args)  # Get command-line arguments
-    main(args)  # Pass to main function
+        if args.pretrained_kge:
+             train_with_kge(args)
+        else:
+            main(args)  # Pass to main function
