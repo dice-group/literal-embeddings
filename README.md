@@ -30,4 +30,4 @@ The following arguments can be used to configure the script. Default values are 
 These arguments need to be passed only if you wish to override the default values. For example:
 
 ```bash
-python main.py --batch_size 64 --num_epochs 20 --lr 0.0005 ```
+python main.py --batch_size 64 --num_epochs 20 --lr 0.0005 
