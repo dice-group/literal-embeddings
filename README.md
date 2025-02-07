@@ -4,7 +4,7 @@ Neural Regression with Embeddings for Numeric Attribute ( Literals ) Prediction 
 ## Installation and Requirements
 To execute the Literal Embedding model, please install the [dice-embeddings framework](https://github.com/dice-group/dice-embeddings)
 
-##  Command Line Arguments
+##  Configurable Arguments
 
 The following arguments can be used to configure the script. Default values are provided, and they will be used unless explicitly modified on the main script.
 
