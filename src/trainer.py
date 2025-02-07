@@ -10,16 +10,22 @@ from src.utils import combine_losses
 
 def train_literal_model(args, literal_dataset: None, kge_model: None, device: None):
 
-    kge_model = kge_model
+    kge_model = kge_model.to(device)
 
     Literal_model = LiteralEmbeddings(
         num_of_data_properties=literal_dataset.num_data_properties,
         embedding_dims=args.embedding_dim,
     ).to(device)
 
-    lit_y = torch.FloatTensor(literal_dataset.train_df["normalized_tail"].tolist())
-    lit_entities = torch.LongTensor(literal_dataset.train_df["head_idx"].values)
-    lit_properties = torch.LongTensor(literal_dataset.train_df["rel_idx"].values)
+    lit_y = torch.FloatTensor(literal_dataset.train_df["normalized_tail"].tolist()).to(
+        device
+    )
+    lit_entities = torch.LongTensor(literal_dataset.train_df["head_idx"].values).to(
+        device
+    )
+    lit_properties = torch.LongTensor(literal_dataset.train_df["rel_idx"].values).to(
+        device
+    )
 
     ent_ebds = kge_model.entity_embeddings(lit_entities)
 
@@ -105,10 +111,15 @@ def train_model(
                 if random_literals:
                     random_data_props = torch.randint(
                         0, num_data_props_batch, (batch_size,)
+                    ).to(device)
+                    y_vals = (
+                        batch_literals.gather(1, random_data_props.view(-1, 1))
+                        .squeeze(1)
+                        .to(device)
                     )
-                    y_vals = batch_literals.gather(
-                        1, random_data_props.view(-1, 1)
-                    ).squeeze(1)
+                    batch_literal_entity_indices = batch_literal_entity_indices.to(
+                        device
+                    )
                     ent_ebds = model.entity_embeddings(batch_literal_entity_indices)
                     yhat = Literal_model.forward(ent_ebds, random_data_props)
                     lit_loss_batch = F.l1_loss(yhat, y_vals)
@@ -120,7 +131,7 @@ def train_model(
                                 Literal_model.forward(
                                     ent_ebds, torch.full((batch_size,), i)
                                 ),
-                                batch_literals[:, i],
+                                batch_literals[:, i].to(device),
                             )
                             for i in range(num_data_props_batch)
                         )
