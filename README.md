@@ -28,7 +28,7 @@ The following arguments can be used to configure the script. Default values are 
 - If set to `True`, both the Knowledge Graph Embedding (KGE) model and the Literal Embedding model are trained together in a combined manner. If set to `False` (default), only the KGE model is trained.
 
 ### `--pretrained_kge`
-If pretrained_kge is set to true, provide a valid path to a folder that contains a pre-trained KGE model. This will bypass all the combined training procedures abd only run an instance of LiteralEmbedding model.
+If pretrained_kge is set to true, provide a valid path to a folder that contains a pre-trained KGE model. This will bypass all the combined training procedures and only run an instance of LiteralEmbedding model.
 
 
 ### Usage

@@ -53,7 +53,7 @@ def train_model(
     device,
     literal_dataset=None,
     Literal_model=None,
-    random_literals=True,
+    random_literals=False,
 ):
     """
     Trains the model and logs the loss.
@@ -121,7 +121,7 @@ def train_model(
                 batch_literal_entity_indices = batch_literal_entity_indices.to(device)
 
                 #randomly sample data properties
-                if random_literals:
+                if args.random_literals:
                     random_data_props = torch.randint(
                         0, num_data_props_batch, (batch_size,)
                     ).to(device)
@@ -143,7 +143,7 @@ def train_model(
                         sum(
                             F.mse_loss(
                                 Literal_model.forward(
-                                    ent_ebds, torch.full((batch_size,), i)
+                                    ent_ebds, torch.full((batch_size,), i).to(device)
                                 ),
                                 batch_literals[:, i].to(device),
                             )
@@ -155,9 +155,9 @@ def train_model(
                 # begin combined loss procedure
 
                 # Define weights for each loss
-                # w1, w2 = 0.7, 0.3
-                # batch_loss = (w1 * ent_loss_batch) + (w2 * lit_loss_batch)
-                batch_loss = combine_losses(ent_loss_batch, lit_loss_batch)
+                w1, w2 = args.alpha, args.beta
+                batch_loss = (w1 * ent_loss_batch) + (w2 * lit_loss_batch)
+                # batch_loss = combine_losses(ent_loss_batch, lit_loss_batch)
                 
 
                 # backward loss and optimization step

@@ -27,7 +27,7 @@ from src.model import LiteralEmbeddings
 # Configuration setup
 args = Namespace()
 args.scoring_technique = "KvsAll"
-args.dataset_dir = "KGs/FamilyT"
+args.dataset_dir = "KGs/FB15k-237"
 args.eval_model = "train_test_eval"
 args.apply_reciprical_or_noise = True
 args.neg_ratio = 0
@@ -37,14 +37,17 @@ args.normalization = None
 args.num_epochs = 150
 args.embedding_dim = 128
 args.lr = 0.05
-args.lit_dataset_dir = "KGs/FamilyL"
-args.optimize_with_literals = False
+args.lit_dataset_dir = "KGs/FB15k-237-lit"
+args.optimize_with_literals = True
 args.lit_lr = 0.001
 args.lit_epochs = 500
 args.save_embeddings_as_csv = False
 args.save_experiment = True
-args.pretrained_kge = True
+args.pretrained_kge = False
+args.random_literals = True
 args.pretrained_kge_path = "Experiments/2025-02-07_12-07-54-709"
+args.alpha = 0.3
+args.beta = 0.7
 
 
 
@@ -234,6 +237,6 @@ def train_with_kge(args):
 
 if __name__ == "__main__":
         if args.pretrained_kge:
-             train_with_kge(args)
+            train_with_kge(args)
         else:
             main(args)  # Pass to main function
