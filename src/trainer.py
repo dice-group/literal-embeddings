@@ -53,7 +53,6 @@ def train_model(
     device,
     literal_dataset=None,
     Literal_model=None,
-    random_literals=False,
 ):
     """
     Trains the model and logs the loss.
@@ -135,7 +134,7 @@ def train_model(
                     
                 else:
                     # combine the epoch loss on all the data proeprties 
-                    # if an entity does not have some literal values, it is set to 0
+                    # if an entity does not have some literal values, it is considered as to 0
                     ent_ebds = model.entity_embeddings(batch_literal_entity_indices)
 
                     #average literal loss on all data properties

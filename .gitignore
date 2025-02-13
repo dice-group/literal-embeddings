@@ -3,3 +3,4 @@ Experiments/*
 *.ipynb
 KGs/*
 MrAP/data/*
+*ipynb_checkpoints*

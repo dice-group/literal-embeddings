@@ -87,7 +87,7 @@ def main(args):
             "optim": "Adam",
         }
     ).to(device)
-
+    args.model = model.name
     literal_dataset = None
     Literal_model = None
 
