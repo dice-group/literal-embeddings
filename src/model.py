@@ -20,7 +20,9 @@ class LiteralEmbeddings(torch.nn.Module):
             bias=True,
         )
         self.fc2 = torch.nn.Linear(
-            in_features=self.embeddings_dim * 2, out_features=1, bias=True
+            in_features=self.embeddings_dim * 2,
+            out_features=num_of_data_properties,
+            bias=True,
         )
         self.dropout = torch.nn.Dropout(p=dropout)
 
@@ -35,5 +37,4 @@ class LiteralEmbeddings(torch.nn.Module):
         )
         out1 = F.relu(self.fc1(tuple_embeddings))
         out1 = self.dropout(out1)
-        out2 = self.fc2(out1 + tuple_embeddings)
-        return out2.flatten()
+        return self.fc2(out1 + tuple_embeddings)

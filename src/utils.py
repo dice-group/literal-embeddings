@@ -3,8 +3,23 @@ import torch
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 
+def denormalize(row, normalization_params, norm_type="z-norm"):
+    type_stats = normalization_params[row["relation"]]
+
+    if norm_type == "z-norm":
+        return (row["preds"] * type_stats["std"]) + type_stats["mean"]
+
+    elif norm_type == "min-max":
+        return (row["preds"] * (type_stats["max"] - type_stats["min"])) + type_stats[
+            "min"
+        ]
+
+    else:
+        raise ValueError("Unsupported normalization type. Use 'z-norm' or 'min-max'.")
+
+
 def evaluate_lit_preds(
-    literal_dataset, dataset_type: str, model, literal_model, device
+    literal_dataset, dataset_type: str, model, literal_model, device, target_type=None
 ):
     """
     Evaluates the model on the specified dataset.
@@ -19,24 +34,10 @@ def evaluate_lit_preds(
     - DataFrame with MAE and RMSE metrics for each relation
     """
 
-    if dataset_type == "test":
-        dataset_path = literal_dataset.test_file_path
-    elif dataset_type == "val":
-        dataset_path = literal_dataset.val_file_path
-    else:
-        raise ValueError("Invalid dataset_type. Choose from 'train', 'test', or 'val'.")
+    target_df = literal_dataset.get_df(split=dataset_type)
 
-    dataset_df = pd.read_csv(
-        dataset_path, sep="\t", header=None, names=["head", "relation", "tail"]
-    )
-
-    dataset_df["head_idx"] = dataset_df["head"].map(literal_dataset.ent_idx)
-    dataset_df["rel_idx"] = dataset_df["relation"].map(
-        literal_dataset.data_property_to_idx
-    )
-
-    entities = torch.LongTensor(dataset_df["head_idx"].values).to(device)
-    properties = torch.LongTensor(dataset_df["rel_idx"].values).to(device)
+    entities = torch.LongTensor(target_df["head_idx"].values).to(device)
+    properties = torch.LongTensor(target_df["rel_idx"].values).to(device)
 
     model.eval()
     literal_model.eval()
@@ -45,17 +46,20 @@ def evaluate_lit_preds(
         entity_embeddings = model.entity_embeddings(entities)
         predictions = literal_model.forward(entity_embeddings, properties)
 
-    dataset_df["preds"] = predictions.cpu().numpy()
+    if target_type == "one-hot":
+        target_df["preds"] = predictions.gather(1, properties.view(-1, 1)).cpu().numpy()
+    else:
+        target_df["preds"] = predictions.cpu().numpy()
 
-    def denormalize(
-        row,
-        normalization_params,
-    ):
-        type_stats = normalization_params[row["relation"]]
-        return (row["preds"] * type_stats["std"]) + type_stats["mean"]
+    target_df["preds"] = predictions.cpu().numpy()
 
-    dataset_df["denormalized_preds"] = dataset_df.apply(
-        denormalize, axis=1, args=(literal_dataset.normalization_params,)
+    target_df["denormalized_preds"] = target_df.apply(
+        denormalize,
+        axis=1,
+        args=(
+            literal_dataset.normalization_params,
+            literal_dataset.normalization,
+        ),
     )
 
     # Compute MAE and RMSE for each relation
@@ -66,7 +70,7 @@ def evaluate_lit_preds(
         rmse = root_mean_squared_error(actuals, predictions)
         return pd.Series({"MAE": mae, "RMSE": rmse})
 
-    error_metrics = dataset_df.groupby("relation").apply(compute_errors).reset_index()
+    error_metrics = target_df.groupby("relation").apply(compute_errors).reset_index()
     pd.options.display.float_format = "{:.6f}".format  # 6 decimal places
     print("Literal Prediction Results on Test Set")
     print(error_metrics)
