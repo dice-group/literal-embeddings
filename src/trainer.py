@@ -16,14 +16,14 @@ def train_literal_model(
     """
     Method to train Literal Embedding model standalone when a Pre-trained model is provided
     """
-
+    device = args.device
     kge_model = kge_model.to(args.device)
     loss_log = {"lit_loss": []}
 
     Literal_model = LiteralEmbeddings(
         num_of_data_properties=literal_dataset.num_data_properties,
         embedding_dims=args.embedding_dim,
-    ).to(args.device)
+    ).to(device)
     lit_entities = literal_dataset.train_data["triples"][:, 0].long()
     lit_properties = literal_dataset.train_data["triples"][:, 1].long()
 
@@ -37,7 +37,11 @@ def train_literal_model(
     y_true[torch.arange(num_samples), lit_properties] = literal_dataset.train_data[
         "tails_norm"
     ].squeeze()  # Uses row index from torch
-
+    lit_entities, lit_properties, y_true = (
+                    lit_entities.to(device),
+                    lit_properties.to(device),
+                    y_true.to(device),
+                )
     ent_ebds = kge_model.entity_embeddings(lit_entities)
 
     optimizer = optim.Adam(Literal_model.parameters(), lr=args.lit_lr)
@@ -75,8 +79,9 @@ def train_model(
     - loss_log: Dictionary of loss logs
     """
     device = args.device
+
     loss_log = {"ent_loss": []}
-    lit_y, lit_entities, lit_properties = None, None, None
+    y_true, lit_entities, lit_properties = None, None, None
     bce_loss_fn = torch.nn.BCEWithLogitsLoss()
     if args.optimize_with_literals:
 
@@ -102,6 +107,7 @@ def train_model(
         model.train()
 
         if args.optimize_with_literals:
+            Literal_model.to(device)
             Literal_model.train()
             for batch in train_dataloader:
 
@@ -120,15 +126,15 @@ def train_model(
 
                 batch_literal_entity_indices = batch_literal_entity_indices.to(device)
 
-                entites, lit_properties, y_true = literal_dataset.get_onehot_batch(
+                lit_entities, lit_properties, y_true = literal_dataset.get_onehot_batch(
                     batch_literal_entity_indices
                 )
-                entites, lit_properties, y_true = (
-                    entites.to(device),
+                lit_entities, lit_properties, y_true = (
+                    lit_entities.to(device),
                     lit_properties.to(device),
                     y_true.to(device),
                 )
-                ent_ebds = model.entity_embeddings(entites)
+                ent_ebds = model.entity_embeddings(lit_entities)
                 yhat = Literal_model.forward(ent_ebds, lit_properties)
                 lit_loss_batch = F.l1_loss(yhat, y_true)
 
