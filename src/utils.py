@@ -4,7 +4,7 @@ from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 
 def denormalize(row, normalization_params, norm_type="z-norm"):
-    type_stats = normalization_params[row["relation"]]
+    type_stats = normalization_params[row["rel_idx"]]
 
     if norm_type == "z-norm":
         return (row["preds"] * type_stats["std"]) + type_stats["mean"]
@@ -19,7 +19,12 @@ def denormalize(row, normalization_params, norm_type="z-norm"):
 
 
 def evaluate_lit_preds(
-    literal_dataset, dataset_type: str, model, literal_model, device, target_type=None
+    literal_dataset,
+    dataset_type: str,
+    model,
+    literal_model,
+    device: None,
+    target_type="one-hot",
 ):
     """
     Evaluates the model on the specified dataset.
@@ -50,8 +55,6 @@ def evaluate_lit_preds(
         target_df["preds"] = predictions.gather(1, properties.view(-1, 1)).cpu().numpy()
     else:
         target_df["preds"] = predictions.cpu().numpy()
-
-    target_df["preds"] = predictions.cpu().numpy()
 
     target_df["denormalized_preds"] = target_df.apply(
         denormalize,
