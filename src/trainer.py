@@ -164,6 +164,7 @@ def train_model(
             # trainning step only for KGE model ( without Literal Model)
             for batch in train_dataloader:
                 train_X, train_y = batch
+                train_X, train_y = train_X.to(device), train_y.to(device)
                 yhat_e = model(train_X)
                 ent_loss_batch = bce_loss_fn(yhat_e, train_y)
                 ent_loss += ent_loss_batch
