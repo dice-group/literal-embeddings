@@ -8,12 +8,15 @@ class LiteralEmbeddings(torch.nn.Module):
         num_of_data_properties: int = None,
         dropout: float = 0.3,
         embedding_dims: int = None,
+        multi_regression=False,
     ):
         super().__init__()
         self.embeddings_dim = embedding_dims
         self.data_property_embeddings = torch.nn.Embedding(
             num_embeddings=num_of_data_properties, embedding_dim=self.embeddings_dim
         )
+        self.multi_regressor = multi_regression
+
         self.fc1 = torch.nn.Linear(
             in_features=self.embeddings_dim * 2,
             out_features=self.embeddings_dim * 2,
@@ -31,10 +34,15 @@ class LiteralEmbeddings(torch.nn.Module):
         head_entity_embeddings = x
         if not train_ent_embeds:
             head_entity_embeddings = x.detach()
+
         relation_embeddings = self.data_property_embeddings(relation_idx)
         tuple_embeddings = torch.cat(
             (head_entity_embeddings, relation_embeddings), dim=1
         )
+
         out1 = F.relu(self.fc1(tuple_embeddings))
         out1 = self.dropout(out1)
-        return self.fc2(out1 + tuple_embeddings)
+        out2 = self.fc2(out1 + tuple_embeddings)
+        if not self.multi_regressor:
+            out2 = out2.flatten()
+        return out2

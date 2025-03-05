@@ -1,6 +1,7 @@
-import torch
-import pandas as pd
 import os
+
+import pandas as pd
+import torch
 from dicee.knowledge_graph_embeddings import KGE
 
 
@@ -23,6 +24,7 @@ class LiteralData:
             self.entity_to_idx = {
                 value: idx for idx, value in ent_idx["entity"].items()
             }
+        self.num_entities = len(self.entity_to_idx)
         self.preprocess_train()
 
     def preprocess_train(self):
@@ -52,11 +54,11 @@ class LiteralData:
                 df[["head_idx", "rel_idx"]].values, dtype=torch.long
             ),
             "tails": torch.tensor(df[["tail"]].values, dtype=torch.float),
-            "tails_norm": torch.tensor(df[["tail_norm"]].values, dtype=torch.float32),
+            "tails_norm": torch.tensor(df["tail_norm"].values, dtype=torch.float32),
         }
-        print()
+        print("Training data Created")
 
-    def get_df(self, split="test"):
+    def get_df(self, split="test", norm=False):
         file_path = self.file_paths.get(split, None)
 
         if file_path is None or not os.path.isfile(file_path):
@@ -72,6 +74,8 @@ class LiteralData:
         )
         df["head_idx"] = df["head"].map(self.entity_to_idx)
         df["rel_idx"] = df["relation"].map(self.data_property_to_idx)
+        if norm:
+            df = self.normalize(df)
         return df
 
     def normalize(self, df):
@@ -91,22 +95,37 @@ class LiteralData:
             df["tail_norm"] = df.groupby("rel_idx")["tail"].transform(
                 lambda x: (x - x.min()) / (x.max() - x.min())
             )
+        return df
 
-    def get_onehot_batch(self, entity_idx: torch.tensor):
-        entity_idx = entity_idx.to("cpu")
+    def get_batch(self, entity_idx: torch.tensor, multi_regression=True):
+        # Extract head and relation IDs
+        # Get row indices where the i-th column contains any of the target values
         indices = torch.where(torch.isin(self.train_data["triples"][:, 0], entity_idx))[
             0
         ]
         entids = self.train_data["triples"][indices, 0]
         rels = self.train_data["triples"][indices, 1]
-        lables = self.train_data["tails_norm"][indices]
+        labels = self.train_data["tails_norm"][indices]
 
-        # Create a zero tensor of shape [num_samples, num_relations]
-        num_samples = entids.shape[0]  # Number of rows in dataset
-        y_true = torch.zeros(
-            (num_samples, self.num_data_properties), dtype=torch.float32
-        )
+        if multi_regression:
+            # Create a zero tensor of shape [num_samples, num_relations]
+            num_samples = entids.shape[0]  # Number of rows in dataset
+            y_true = torch.full(
+                (num_samples, self.num_data_properties), -9, dtype=torch.float32
+            )  # Match dtype with `v`
 
-        # Assign tail values at the correct relation indices per row
-        y_true[torch.arange(num_samples), rels] = lables.squeeze()
+            # Assign tail values at the correct relation indices per row
+            y_true[torch.arange(num_samples), rels] = labels
+        else:
+            y_true = labels
         return entids, rels, y_true
+
+    def get_ea_encoding(self):
+        # Encoding tensor
+        ea_pair = torch.full(
+            (self.num_entities, self.num_data_properties), 0, dtype=torch.float32
+        )
+        e = self.train_data["triples"][:, 0].long()
+        a = self.train_data["triples"][:, 1].long()
+        ea_pair[e, a] = 1
+        return ea_pair

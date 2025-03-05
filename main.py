@@ -14,15 +14,13 @@ from dicee.evaluator import Evaluator
 from dicee.knowledge_graph import KG
 from dicee.knowledge_graph_embeddings import KGE
 from dicee.models import Keci, TransE
-from dicee.static_funcs import read_or_load_kg, store
+from dicee.static_funcs import intialize_model, read_or_load_kg, store
 from torch.utils.data import DataLoader
-from src.dataset import LiteralData
-from dicee.static_funcs import intialize_model
-from src.trainer import train_literal_model, train_model
-from src.utils import evaluate_lit_preds
+
 from src.dataset import LiteralData
 from src.model import LiteralEmbeddings
-
+from src.trainer import train_literal_model, train_model
+from src.utils import evaluate_lit_preds
 
 # Configuration setup
 args = Namespace()
@@ -42,10 +40,10 @@ args.optimize_with_literals = False
 args.lit_lr = 0.001
 args.lit_epochs = 500
 args.save_embeddings_as_csv = False
-args.save_experiment = True
+args.save_experiment = False
 args.pretrained_kge = False
-args.random_literals = True
-args.pretrained_kge_path = "Experiments/2025-02-13_09-02-27-588"
+args.pretrained_kge_path = "Experiments/2025-02-18_12-16-50-772"
+args.multi_regression = True
 args.alpha = 1
 args.beta = 1
 args.p = 0
@@ -96,11 +94,12 @@ def main(args):
         literal_dataset = LiteralData(
             dataset_dir=args.lit_dataset_dir,
             ent_idx=entity_dataset.entity_to_idx,
-            normalization="min-max",
+            normalization="z-norm",
         )
         Literal_model = LiteralEmbeddings(
             num_of_data_properties=literal_dataset.num_data_properties,
             embedding_dims=args.embedding_dim,
+            multi_regression=args.multi_regression,
         )
 
     # Training
@@ -128,6 +127,7 @@ def main(args):
             model=model,
             literal_model=Literal_model,
             device=args.device,
+            multi_regression=args.multi_regression,
         )
 
         print("Training Literal model After Combined Entity-Literal Training")
@@ -143,6 +143,7 @@ def main(args):
             model=model,
             literal_model=Lit_model,
             device=args.device,
+            multi_regression=args.multi_regression,
         )
         if args.save_experiment:
             lit_results_file_path = os.path.join(exp_path_name, "lit_results.json")
@@ -207,7 +208,7 @@ def train_with_kge(args):
         exit(0)
 
     literal_dataset = LiteralData(
-        dataset_dir=args.lit_dataset_dir, ent_idx=e2idx_df, normalization="min-max"
+        dataset_dir=args.lit_dataset_dir, ent_idx=e2idx_df, normalization="z-norm"
     )
     Lit_model, loss_log = train_literal_model(
         args=args,
@@ -221,6 +222,7 @@ def train_with_kge(args):
         model=kge_model,
         literal_model=Lit_model,
         device=args.device,
+        multi_regression=args.multi_regression,
     )
     if args.save_experiment:
         args.device = str(args.device)

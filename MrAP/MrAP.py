@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from torch_scatter import scatter
 
+
 class MrAP():
   def __init__(self, device, edge_list, eta = 1, omega = 1, tau = 0):
     r"""

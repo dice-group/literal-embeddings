@@ -5,7 +5,6 @@ from torch.nn import HuberLoss
 from tqdm import tqdm
 
 from src.model import LiteralEmbeddings
-from src.utils import combine_losses
 
 
 def train_literal_model(
@@ -23,25 +22,27 @@ def train_literal_model(
     Literal_model = LiteralEmbeddings(
         num_of_data_properties=literal_dataset.num_data_properties,
         embedding_dims=args.embedding_dim,
-    ).to(device)
+        multi_regression=args.multi_regression,
+    ).to(args.device)
+
     lit_entities = literal_dataset.train_data["triples"][:, 0].long()
     lit_properties = literal_dataset.train_data["triples"][:, 1].long()
 
-    # Create a zero tensor of shape [num_samples, num_relations]
-    num_samples = lit_entities.shape[0]  # Number of rows in dataset
-    y_true = torch.full(
-        (num_samples, literal_dataset.num_data_properties), 0, dtype=torch.float32
-    )  # Match dtype with `v`
+    if args.multi_regression:
+        # Create a zero tensor of shape [num_samples, num_relations]
+        num_samples = lit_entities.shape[0]  # Number of rows in dataset
+        y_true = torch.full(
+            (num_samples, literal_dataset.num_data_properties), 0, dtype=torch.float32
+        )  # Match dtype with `v`
 
-    # Assign tail values at the correct relation indices per row
-    y_true[torch.arange(num_samples), lit_properties] = literal_dataset.train_data[
-        "tails_norm"
-    ].squeeze()  # Uses row index from torch
-    lit_entities, lit_properties, y_true = (
-                    lit_entities.to(device),
-                    lit_properties.to(device),
-                    y_true.to(device),
-                )
+        # Assign tail values at the correct relation indices per row
+        y_true[torch.arange(num_samples), lit_properties] = literal_dataset.train_data[
+            "tails_norm"
+        ]  # Uses row index from torch
+
+    else:
+        y_true = literal_dataset.train_data["tails_norm"]
+
     ent_ebds = kge_model.entity_embeddings(lit_entities)
 
     optimizer = optim.Adam(Literal_model.parameters(), lr=args.lit_lr)
@@ -124,10 +125,10 @@ def train_model(
 
                 batch_literal_entity_indices = train_X[:, 0].long().to("cpu")
 
-                batch_literal_entity_indices = batch_literal_entity_indices.to(device)
+                # batch_literal_entity_indices = batch_literal_entity_indices.to(device)
 
-                lit_entities, lit_properties, y_true = literal_dataset.get_onehot_batch(
-                    batch_literal_entity_indices
+                entites, lit_properties, y_true = literal_dataset.get_batch(
+                    batch_literal_entity_indices, multi_regression=args.multi_regression
                 )
                 lit_entities, lit_properties, y_true = (
                     lit_entities.to(device),

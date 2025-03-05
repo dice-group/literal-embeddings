@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+
 def performance(x_pred, x_gt, u_0, feasible_nodes = None):
     r"""
     Measure performance
