@@ -12,10 +12,13 @@ class LiteralEmbeddings(torch.nn.Module):
     ):
         super().__init__()
         self.embeddings_dim = embedding_dims
+        self.num_of_data_properties = num_of_data_properties
+        self.multi_regressor = multi_regression
+        self.out_features = self.num_of_data_properties if self.multi_regressor else 1
+
         self.data_property_embeddings = torch.nn.Embedding(
             num_embeddings=num_of_data_properties, embedding_dim=self.embeddings_dim
         )
-        self.multi_regressor = multi_regression
 
         self.fc1 = torch.nn.Linear(
             in_features=self.embeddings_dim * 2,
@@ -24,7 +27,7 @@ class LiteralEmbeddings(torch.nn.Module):
         )
         self.fc2 = torch.nn.Linear(
             in_features=self.embeddings_dim * 2,
-            out_features=num_of_data_properties,
+            out_features=self.out_features,
             bias=True,
         )
         self.dropout = torch.nn.Dropout(p=dropout)

@@ -36,13 +36,14 @@ args.num_epochs = 150
 args.embedding_dim = 128
 args.lr = 0.05
 args.lit_dataset_dir = "KGs/FamilyL"
-args.combined_training = False
+args.combined_training = True
 args.lit_lr = 0.001
 args.lit_epochs = 500
 args.save_embeddings_as_csv = False
 args.save_experiment = False
-args.pretrained_kge_path = "Experiments/2025-02-18_12-16-50-772"
-args.multi_regression = True
+args.pretrained_kge = False
+args.pretrained_kge_path = "pretrained_kge/family-keci-32"
+args.multi_regression = False
 args.alpha = 1
 args.beta = 1
 args.p = 0
@@ -88,7 +89,7 @@ def main(args):
     literal_dataset = None
     Literal_model = None
 
-    if args.optimize_with_literals:
+    if args.combined_training:
 
         literal_dataset = LiteralData(
             dataset_dir=args.lit_dataset_dir,
@@ -118,8 +119,7 @@ def main(args):
         trained_model=model,
         form_of_labelling="EntityPrediction",
     )
-    model.to(args.device)
-    if args.optimize_with_literals:
+    if args.combined_training:
         lit_results = evaluate_lit_preds(
             literal_dataset,
             dataset_type="test",
@@ -241,7 +241,7 @@ def train_with_kge(args):
 
 
 if __name__ == "__main__":
-    if args.pretrained_kge_path:
+    if args.pretrained_kge:
         train_with_kge(args)
     else:
         main(args)  # Pass to main function

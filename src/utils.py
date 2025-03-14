@@ -50,14 +50,15 @@ def evaluate_lit_preds(
 
     target_df = literal_dataset.get_df(split=dataset_type)
 
-    entities = torch.LongTensor(target_df["head_idx"].values).to(device)
-    properties = torch.LongTensor(target_df["rel_idx"].values).to(device)
+    entities = torch.LongTensor(target_df["head_idx"].values)
+    properties = torch.LongTensor(target_df["rel_idx"].values)
 
     model.eval()
     literal_model.eval()
 
     with torch.no_grad():
         entity_embeddings = model.entity_embeddings(entities)
+        entity_embeddings, properties = entity_embeddings.to(device), properties.to(device)
         predictions = literal_model.forward(entity_embeddings, properties)
 
     if multi_regression:

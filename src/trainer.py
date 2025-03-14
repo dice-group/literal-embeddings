@@ -16,12 +16,11 @@ def train_literal_model(
     Method to train Literal Embedding model standalone when a Pre-trained model is provided
     """
     device = args.device
-    kge_model = kge_model.to(args.device)
     loss_log = {"lit_loss": []}
 
     Literal_model = LiteralEmbeddings(
         num_of_data_properties=literal_dataset.num_data_properties,
-        embedding_dims=args.embedding_dim,
+        embedding_dims=kge_model.embedding_dim,
         multi_regression=args.multi_regression,
     ).to(args.device)
 
@@ -44,6 +43,7 @@ def train_literal_model(
         y_true = literal_dataset.train_data["tails_norm"]
 
     ent_ebds = kge_model.entity_embeddings(lit_entities)
+    ent_ebds, lit_properties, y_true = ent_ebds.to(device), lit_properties.to(device), y_true.to(device)
 
     optimizer = optim.Adam(Literal_model.parameters(), lr=args.lit_lr)
     for epoch in (tqdm_bar := tqdm(range(args.lit_epochs))):

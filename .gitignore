@@ -4,3 +4,4 @@ Experiments/*
 KGs/*
 MrAP/data/*
 *ipynb_checkpoints*
+pretrained_kge/*
