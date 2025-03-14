@@ -36,12 +36,11 @@ args.num_epochs = 150
 args.embedding_dim = 128
 args.lr = 0.05
 args.lit_dataset_dir = "KGs/FamilyL"
-args.optimize_with_literals = False
+args.combined_training = False
 args.lit_lr = 0.001
 args.lit_epochs = 500
 args.save_embeddings_as_csv = False
 args.save_experiment = False
-args.pretrained_kge = False
 args.pretrained_kge_path = "Experiments/2025-02-18_12-16-50-772"
 args.multi_regression = True
 args.alpha = 1
@@ -242,7 +241,7 @@ def train_with_kge(args):
 
 
 if __name__ == "__main__":
-    if args.pretrained_kge:
+    if args.pretrained_kge_path:
         train_with_kge(args)
     else:
         main(args)  # Pass to main function

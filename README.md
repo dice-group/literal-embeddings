@@ -11,12 +11,12 @@ The following arguments can be used to configure the script. Default values are 
 ### Default Arguments
 
 - `--dataset_dir`: `KGs / FamilyT`
-- `--lit_dataset_dir`: `KGs/FamilyL` 
+- `--dataset_dir_lit`: `KGs/FamilyL` 
 - `--batch_size`: `1024`
 - `--num_epochs`: `100`
 - `--embedding_dim`: `128`
 - `--lr`: `0.05`
-- `--optimize_with_literals`: `True`
+- `--combined_training`: `True`
 - `--lit_lr`: `0.0001`
 - `--lit_epochs`: `500`
 - `--save_embeddings_as_csv`: `False`
@@ -24,7 +24,7 @@ The following arguments can be used to configure the script. Default values are 
 - `--pretrained_kge`: `False`
 - `--pretrained_kge_path`: `None`
 
-### `--optimize_with_literals`
+### `--combined_training`
 - If set to `True`, both the Knowledge Graph Embedding (KGE) model and the Literal Embedding model are trained together in a combined manner. If set to `False` (default), only the KGE model is trained.
 
 ### `--pretrained_kge`

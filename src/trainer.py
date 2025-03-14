@@ -84,7 +84,7 @@ def train_model(
     loss_log = {"ent_loss": []}
     y_true, lit_entities, lit_properties = None, None, None
     bce_loss_fn = torch.nn.BCEWithLogitsLoss()
-    if args.optimize_with_literals:
+    if args.combined_training:
 
         # intialize loss logs and optimizers for Literal and KGE odel
         loss_log["lit_loss"] = []
@@ -107,7 +107,7 @@ def train_model(
         lit_loss = 0
         model.train()
 
-        if args.optimize_with_literals:
+        if args.combined_training:
             Literal_model.to(device)
             Literal_model.train()
             for batch in train_dataloader:
@@ -127,7 +127,7 @@ def train_model(
 
                 # batch_literal_entity_indices = batch_literal_entity_indices.to(device)
 
-                entites, lit_properties, y_true = literal_dataset.get_batch(
+                lit_entities, lit_properties, y_true = literal_dataset.get_batch(
                     batch_literal_entity_indices, multi_regression=args.multi_regression
                 )
                 lit_entities, lit_properties, y_true = (
