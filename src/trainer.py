@@ -177,4 +177,4 @@ def train_model(
             avg_epoch_loss = ent_loss / len(train_dataloader)
             loss_log["ent_loss"].append(avg_epoch_loss.item())
 
-    return loss_log
+    return model, Literal_model, loss_log

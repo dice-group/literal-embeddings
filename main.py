@@ -8,7 +8,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from dicee.config import Namespace
+from src.config import get_default_arguments
 from dicee.dataset_classes import KvsAll
 from dicee.evaluator import Evaluator
 from dicee.knowledge_graph import KG
@@ -22,40 +22,13 @@ from src.model import LiteralEmbeddings
 from src.trainer import train_literal_model, train_model
 from src.utils import evaluate_lit_preds
 
-# Configuration setup
-args = Namespace()
-args.scoring_technique = "KvsAll"
-args.dataset_dir = "KGs/FamilyT"
-args.eval_model = "train_test_eval"
-args.apply_reciprical_or_noise = True
-args.neg_ratio = 0
-args.label_smoothing_rate = 0.0
-args.batch_size = 1024
-args.normalization = None
-args.num_epochs = 150
-args.embedding_dim = 128
-args.lr = 0.05
-args.lit_dataset_dir = "KGs/FamilyL"
-args.combined_training = True
-args.lit_lr = 0.001
-args.lit_epochs = 500
-args.save_embeddings_as_csv = False
-args.save_experiment = False
-args.pretrained_kge = False
-args.pretrained_kge_path = "pretrained_kge/family-keci-32"
-args.multi_regression = False
-args.alpha = 1
-args.beta = 1
-args.p = 0
-args.q = 1
-
-
 def main(args):
     # Save Experiment Results
-    exp_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
-    exp_path_name = f"Experiments/{exp_date_time}"
-    args.full_storage_path = exp_path_name
-    os.makedirs(exp_path_name, exist_ok=True)
+    if args.full_storage_path is None:
+        exp_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
+        exp_path_name = f"Experiments/{exp_date_time}"
+        args.full_storage_path = exp_path_name
+    os.makedirs(args.full_storage_path, exist_ok=True)
 
     # Device setup
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,17 +48,7 @@ def main(args):
         train_dataset, batch_size=args.batch_size, shuffle=True
     )
 
-    model = Keci(
-        args={
-            "num_entities": entity_dataset.num_entities,
-            "num_relations": entity_dataset.num_relations,
-            "embedding_dim": args.embedding_dim,
-            "p": args.p,
-            "q": args.q,
-            "optim": "Adam",
-        }
-    ).to(args.device)
-    args.model = model.name
+    kge_model, _ = intialize_model(args, 0)
     literal_dataset = None
     Literal_model = None
 
@@ -103,8 +66,8 @@ def main(args):
         )
 
     # Training
-    loss_log = train_model(
-        model,
+    kge_model, Literal_model, loss_log = train_model(
+        kge_model,
         train_dataloader,
         args,
         literal_dataset,
@@ -113,17 +76,17 @@ def main(args):
 
     # Evaluating the model
     evaluator = Evaluator(args=args)
-    model.to("cpu")
+    kge_model.to("cpu")
     evaluator.eval(
         dataset=entity_dataset,
-        trained_model=model,
+        trained_model=kge_model,
         form_of_labelling="EntityPrediction",
     )
     if args.combined_training:
         lit_results = evaluate_lit_preds(
             literal_dataset,
             dataset_type="test",
-            model=model,
+            model=kge_model,
             literal_model=Literal_model,
             device=args.device,
             multi_regression=args.multi_regression,
@@ -133,13 +96,13 @@ def main(args):
         Lit_model, _ = train_literal_model(
             args=args,
             literal_dataset=literal_dataset,
-            kge_model=model,
+            kge_model=kge_model,
         )
         print(" Perfromance of Literal Model on Enhanced Entitiy Embeddings ")
-        lit_results = evaluate_lit_preds(
+        lit_results_enhanced = evaluate_lit_preds(
             literal_dataset,
             dataset_type="test",
-            model=model,
+            model=kge_model,
             literal_model=Lit_model,
             device=args.device,
             multi_regression=args.multi_regression,
@@ -151,7 +114,7 @@ def main(args):
 
     if args.save_experiment:
         store(
-            trained_model=model,
+            trained_model=kge_model,
             model_name="model",
             full_storage_path=args.full_storage_path,
             save_embeddings_as_csv=args.save_embeddings_as_csv,
@@ -241,7 +204,10 @@ def train_with_kge(args):
 
 
 if __name__ == "__main__":
-    if args.pretrained_kge:
+    args = get_default_arguments()
+    print(args.literal_training)
+    exit(0)
+    if args.literal_training:
         train_with_kge(args)
     else:
         main(args)  # Pass to main function

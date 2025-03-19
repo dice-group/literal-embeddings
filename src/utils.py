@@ -21,7 +21,7 @@ def denormalize(row, normalization_params, norm_type="z-norm"):
 # Compute MAE and RMSE for each relation
 def compute_errors(group):
     actuals = group["tail"]
-    predictions = group["denormalized_preds"]
+    predictions = group["preds"]
     mae = mean_absolute_error(actuals, predictions)
     rmse = root_mean_squared_error(actuals, predictions)
     return pd.Series({"MAE": mae, "RMSE": rmse})
@@ -62,18 +62,21 @@ def evaluate_lit_preds(
         predictions = literal_model.forward(entity_embeddings, properties)
 
     if multi_regression:
-        target_df["preds"] = predictions.gather(1, properties.view(-1, 1)).cpu().numpy()
+        target_df["preds_raw"] = predictions.gather(1, properties.view(-1, 1)).cpu().numpy()
     else:
-        target_df["preds"] = predictions.cpu().numpy()
+        target_df["preds_raw"] = predictions.cpu().numpy()
 
-    target_df["denormalized_preds"] = target_df.apply(
-        denormalize,
-        axis=1,
-        args=(
-            literal_dataset.normalization_params,
-            literal_dataset.normalization,
-        ),
-    )
+    if literal_dataset.normalization is None:
+        target_df['preds'] = target_df['preds_raw']
+    else:
+        target_df["preds"] = target_df.apply(
+            denormalize,
+            axis=1,
+            args=(
+                literal_dataset.normalization_params,
+                literal_dataset.normalization,
+            ),
+        )
 
     error_metrics = target_df.groupby("relation").apply(compute_errors).reset_index()
     pd.options.display.float_format = "{:.6f}".format  # 6 decimal places

@@ -9,7 +9,7 @@ class LiteralData:
     def __init__(
         self, dataset_dir: str, ent_idx, filter_df=False, normalization="z-norm"
     ):
-        self.dataset_dir = dataset_dir
+        self.dataset_dir = os.path.join(dataset_dir, 'literals')
         self.file_paths = {
             "train": os.path.join(self.dataset_dir, "train.txt"),
             "test": os.path.join(self.dataset_dir, "test.txt"),
@@ -45,7 +45,10 @@ class LiteralData:
         df = df[df["head"].isin(self.entity_to_idx)]
         df["head_idx"] = df["head"].map(self.entity_to_idx)
         df["rel_idx"] = df["relation"].map(self.data_property_to_idx)
-        self.normalize(df)
+        if self.normalization is None:
+            df["tails_norm"] = df["tail"]
+        else:
+            self.normalize(df)
 
         # Compute mean and std for each rel_idx in a vectorized manner
 
