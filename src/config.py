@@ -50,7 +50,7 @@ def get_default_arguments():
     parser.add_argument("--num_epochs", type=int, default=128, help='Number of epochs for training. ')
     parser.add_argument('--batch_size', type=int, default=1024,
                         help='Mini batch size. If None, automatic batch finder is applied')
-    parser.add_argument("--lr", type=float, default=0.1)
+    parser.add_argument("--lr", type=float, default=0.05)
     parser.add_argument('--callbacks', type=json.loads,
                         default={},
                         help='{"PPE":{ "last_percent_to_consider": 10}}'
@@ -67,7 +67,7 @@ def get_default_arguments():
     parser.add_argument('--input_dropout_rate', type=float, default=0.0)
     parser.add_argument('--hidden_dropout_rate', type=float, default=0.0)
     parser.add_argument("--feature_map_dropout_rate", type=float, default=0.0)
-    parser.add_argument("--normalization", type=str, default="None",
+    parser.add_argument("--normalization", type=str, default=None,
                         choices=["LayerNorm", "BatchNorm1d", None],
                         help="Normalization technique")
     parser.add_argument("--init_param", type=str, default=None, choices=["xavier_normal", None],
@@ -110,7 +110,7 @@ def get_default_arguments():
                         help='Add x % of noisy triples into training dataset.')
     # WIP
 
-    parser.add_argument('--r', type=int, default=0,
+    parser.add_argument('--r', type=int, default=1,
                         help='R for Clifford Algebra')
     parser.add_argument('--block_size', type=int, default=8,
                         help='Block size for BytE')
@@ -140,6 +140,8 @@ def get_default_arguments():
                         help='Perfrom multi-output regression for Literal Embedding model')
     parser.add_argument('--save_experiment', action="store_true", default=False,
                         help='Store the experiment results at provided path')
+    parser.add_argument('--apply_reciprical_or_noise', action="store_true", default=True,
+                        help='apply_reciprical_or_noise')
     parser.add_argument('--lit_norm', type=str, default='z-norm',
                         help='Normalization of Literal Datasets')
 

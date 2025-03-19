@@ -80,9 +80,11 @@ def train_model(
     - loss_log: Dictionary of loss logs
     """
     device = args.device
-
+    model.to(device)
+    
     loss_log = {"ent_loss": []}
     y_true, lit_entities, lit_properties = None, None, None
+    
     bce_loss_fn = torch.nn.BCEWithLogitsLoss()
     if args.combined_training:
 

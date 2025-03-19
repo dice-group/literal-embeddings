@@ -26,7 +26,7 @@ def main(args):
     # Save Experiment Results
     if args.full_storage_path is None:
         exp_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
-        exp_path_name = f"Experiments/{exp_date_time}"
+        exp_path_name = f"Test_runs/{exp_date_time}"
         args.full_storage_path = exp_path_name
     os.makedirs(args.full_storage_path, exist_ok=True)
 
@@ -48,7 +48,7 @@ def main(args):
         train_dataset, batch_size=args.batch_size, shuffle=True
     )
 
-    kge_model, _ = intialize_model(args, 0)
+    kge_model, _ = intialize_model(vars(args), 0)
     literal_dataset = None
     Literal_model = None
 
@@ -57,7 +57,7 @@ def main(args):
         literal_dataset = LiteralData(
             dataset_dir=args.lit_dataset_dir,
             ent_idx=entity_dataset.entity_to_idx,
-            normalization="z-norm",
+            normalization=args.lit_norm,
         )
         Literal_model = LiteralEmbeddings(
             num_of_data_properties=literal_dataset.num_data_properties,
@@ -170,7 +170,7 @@ def train_with_kge(args):
         exit(0)
 
     literal_dataset = LiteralData(
-        dataset_dir=args.lit_dataset_dir, ent_idx=e2idx_df, normalization="z-norm"
+        dataset_dir=args.lit_dataset_dir, ent_idx=e2idx_df, normalization=args.lit_norm
     )
     Lit_model, loss_log = train_literal_model(
         args=args,
@@ -205,8 +205,7 @@ def train_with_kge(args):
 
 if __name__ == "__main__":
     args = get_default_arguments()
-    print(args.literal_training)
-    exit(0)
+    args.learning_rate = args.lr
     if args.literal_training:
         train_with_kge(args)
     else:
