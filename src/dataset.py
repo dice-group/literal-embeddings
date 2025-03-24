@@ -75,6 +75,9 @@ class LiteralData:
             header=None,
             names=["head", "relation", "tail"],
         )
+        # non_df = df[~df["head"].isin(self.entity_to_idx)]
+        # print(non_df["head"].unique())
+        df = df[df["head"].isin(self.entity_to_idx)]
         df["head_idx"] = df["head"].map(self.entity_to_idx)
         df["rel_idx"] = df["relation"].map(self.data_property_to_idx)
         if norm:

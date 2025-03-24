@@ -4,9 +4,9 @@ import os
 
 args = get_default_arguments()
 exp_models = ["TransE", "DistMult", "Keci", "ComplEx", "OMult", "QMult", "DeCaL"]
-
-exp_dir = "Experiments/Family_16"
-args.literal_training = True
+# exp_models = ["TransE"]
+exp_dir = "Experiments/Family_128"
+args.literal_training = False
 
 if args.literal_training:
     for model_name in exp_models:
@@ -16,13 +16,13 @@ if args.literal_training:
         res = train_with_kge(args)
 
 else:
-    dataset_name = "Family"
+    dataset_name = "FB15k-237"
     args.dataset_dir = f"KGs/{dataset_name}"
     args.lr = 0.05
-    args.embedding_dim = 16
-    args.num_epochs = 20
+    args.embedding_dim = 128
+    args.num_epochs = 256
     args.save_experiment = True
-    args.combined_training = False
+    args.combined_training = True
 
     for model_name in exp_models:
         args.learning_rate = args.lr
