@@ -51,6 +51,8 @@ def get_default_arguments():
     parser.add_argument('--batch_size', type=int, default=1024,
                         help='Mini batch size. If None, automatic batch finder is applied')
     parser.add_argument("--lr", type=float, default=0.05)
+    parser.add_argument("--lit_lr", type=float, default=0.01)
+    parser.add_argument("--lit_epochs", type=int, default=200)
     parser.add_argument('--callbacks', type=json.loads,
                         default={},
                         help='{"PPE":{ "last_percent_to_consider": 10}}'
@@ -58,7 +60,7 @@ def get_default_arguments():
     parser.add_argument("--trainer", type=str, default='PL',
                         choices=['torchCPUTrainer', 'PL', 'torchDDP', "TP"],
                         help='PL (pytorch lightning trainer), torchDDP (custom ddp), torchCPUTrainer (custom cpu only), MP (Model Paralelisim)')
-    parser.add_argument('--scoring_technique', default="NegSample",
+    parser.add_argument('--scoring_technique', default="KvsAll",
                         help="Training technique for knowledge graph embedding model",
                         choices=["AllvsAll", "KvsAll", "1vsAll", "NegSample", "1vsSample", "KvsSample"])
     parser.add_argument('--neg_ratio', type=int, default=2,

@@ -55,7 +55,7 @@ def main(args):
     if args.combined_training:
 
         literal_dataset = LiteralData(
-            dataset_dir=args.lit_dataset_dir,
+            dataset_dir=args.dataset_dir,
             ent_idx=entity_dataset.entity_to_idx,
             normalization=args.lit_norm,
         )
@@ -108,7 +108,7 @@ def main(args):
             multi_regression=args.multi_regression,
         )
         if args.save_experiment:
-            lit_results_file_path = os.path.join(exp_path_name, "lit_results.json")
+            lit_results_file_path = os.path.join(args.full_storage_path, "lit_results.json")
             with open(lit_results_file_path, "w") as f:
                 json.dump(lit_results.to_dict(orient="records"), f, indent=4)
 
@@ -120,19 +120,19 @@ def main(args):
             save_embeddings_as_csv=args.save_embeddings_as_csv,
         )
 
-        print(f"The experiment results are stored at {exp_path_name}")
+        print(f"The experiment results are stored at {args.full_storage_path}")
 
         df_loss_log = pd.DataFrame.from_dict(loss_log, orient="index").transpose()
         df_loss_log.to_csv(
-            os.path.join(exp_path_name, "loss_log.tsv"), sep="\t", index=False
+            os.path.join(args.full_storage_path, "loss_log.tsv"), sep="\t", index=False
         )
         args.device = str(args.device)
         exp_configs = vars(args)
 
-        with open(os.path.join(exp_path_name, "configuration.json"), "w") as f:
+        with open(os.path.join(args.full_storage_path, "configuration.json"), "w") as f:
             json.dump(exp_configs, f, indent=4)
 
-        with open(os.path.join(exp_path_name, "lp_results.json"), "w") as f:
+        with open(os.path.join(args.full_storage_path, "lp_results.json"), "w") as f:
             json.dump(evaluator.report, f, indent=4)
 
 
@@ -170,7 +170,7 @@ def train_with_kge(args):
         exit(0)
 
     literal_dataset = LiteralData(
-        dataset_dir=args.lit_dataset_dir, ent_idx=e2idx_df, normalization=args.lit_norm
+        dataset_dir=args.dataset_dir, ent_idx=e2idx_df, normalization=args.lit_norm
     )
     Lit_model, loss_log = train_literal_model(
         args=args,
@@ -206,6 +206,7 @@ def train_with_kge(args):
 if __name__ == "__main__":
     args = get_default_arguments()
     args.learning_rate = args.lr
+    args.pretrained_kge_path = 'pretrained_KGE/family-keci-32'
     if args.literal_training:
         train_with_kge(args)
     else:

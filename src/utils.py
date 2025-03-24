@@ -7,10 +7,10 @@ def denormalize(row, normalization_params, norm_type="z-norm"):
     type_stats = normalization_params[row["rel_idx"]]
 
     if norm_type == "z-norm":
-        return (row["preds"] * type_stats["std"]) + type_stats["mean"]
+        return (row["preds_raw"] * type_stats["std"]) + type_stats["mean"]
 
     elif norm_type == "min-max":
-        return (row["preds"] * (type_stats["max"] - type_stats["min"])) + type_stats[
+        return (row["preds_raw"] * (type_stats["max"] - type_stats["min"])) + type_stats[
             "min"
         ]
 
