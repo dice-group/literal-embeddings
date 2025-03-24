@@ -22,6 +22,7 @@ from src.model import LiteralEmbeddings
 from src.trainer import train_literal_model, train_model
 from src.utils import evaluate_lit_preds
 
+
 def main(args):
     # Save Experiment Results
     if args.full_storage_path is None:
@@ -108,7 +109,9 @@ def main(args):
             multi_regression=args.multi_regression,
         )
         if args.save_experiment:
-            lit_results_file_path = os.path.join(args.full_storage_path, "lit_results.json")
+            lit_results_file_path = os.path.join(
+                args.full_storage_path, "lit_results.json"
+            )
             with open(lit_results_file_path, "w") as f:
                 json.dump(lit_results.to_dict(orient="records"), f, indent=4)
 
@@ -145,6 +148,7 @@ def train_with_kge(args):
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     try:
+
         config_path = os.path.join(args.pretrained_kge_path, "configuration.json")
         model_path = os.path.join(args.pretrained_kge_path, "model.pt")
         entity_to_idx_path = os.path.join(args.pretrained_kge_path, "entity_to_idx.csv")
@@ -164,49 +168,56 @@ def train_with_kge(args):
         # Load the model weights into the model
         kge_model.load_state_dict(weights)
         e2idx_df = pd.read_csv(entity_to_idx_path, index_col=0)
+        literal_dataset = LiteralData(
+            dataset_dir=args.dataset_dir, ent_idx=e2idx_df, normalization=args.lit_norm
+        )
 
     except:
         print(" Building the KGE model failed: Fix args ")
         exit(0)
-
-    literal_dataset = LiteralData(
-        dataset_dir=args.dataset_dir, ent_idx=e2idx_df, normalization=args.lit_norm
+    args.embedding_dim = kge_model.embedding_dim
+    args.model = kge_model.name
+    dataset_name = args.dataset_dir.split(os.sep)[-1]
+    args.full_storage_path = (
+        f"Experiments_Literals/{dataset_name}_{args.embedding_dim}/{args.model}"
     )
-    Lit_model, loss_log = train_literal_model(
-        args=args,
-        literal_dataset=literal_dataset,
-        kge_model=kge_model,
-    )
+    for i in range(args.num_literal_runs):
 
-    lit_results = evaluate_lit_preds(
-        literal_dataset,
-        dataset_type="test",
-        model=kge_model,
-        literal_model=Lit_model,
-        device=args.device,
-        multi_regression=args.multi_regression,
-    )
-    if args.save_experiment:
-        args.device = str(args.device)
-        exp_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
-        exp_path_name = f"Experiments/{exp_date_time}"
-        os.makedirs(exp_path_name, exist_ok=True)
-        lit_results_file_path = os.path.join(exp_path_name, "lit_results.json")
-        with open(lit_results_file_path, "w") as f:
-            json.dump(lit_results.to_dict(orient="records"), f, indent=4)
-        with open(os.path.join(exp_path_name, "configuration.json"), "w") as f:
-            json.dump(configs, f, indent=4)
+        Lit_model, loss_log = train_literal_model(
+            args=args,
+            literal_dataset=literal_dataset,
+            kge_model=kge_model,
+        )
 
+        lit_results = evaluate_lit_preds(
+            literal_dataset,
+            dataset_type="test",
+            model=kge_model,
+            literal_model=Lit_model,
+            device=args.device,
+            multi_regression=args.multi_regression,
+        )
+
+        exp_path = f"{args.full_storage_path}/run_{i+1}"
+        os.makedirs(exp_path, exist_ok=True)
         df_loss_log = pd.DataFrame.from_dict(loss_log, orient="index").transpose()
         df_loss_log.to_csv(
-            os.path.join(exp_path_name, "loss_log.tsv"), sep="\t", index=False
+            os.path.join(exp_path, "loss_log.tsv"), sep="\t", index=False
         )
+        lit_results_file_path = os.path.join(exp_path, "lit_results.json")
+        with open(lit_results_file_path, "w") as f:
+            json.dump(lit_results.to_dict(orient="records"), f, indent=4)
+
+    args.device = str(args.device)
+    exp_configs = vars(args)
+    with open(os.path.join(args.full_storage_path, "configuration.json"), "w") as f:
+        json.dump(exp_configs, f, indent=4)
 
 
 if __name__ == "__main__":
     args = get_default_arguments()
     args.learning_rate = args.lr
-    args.pretrained_kge_path = 'pretrained_KGE/family-keci-32'
+    args.pretrained_kge_path = "pretrained_KGE/family-keci-32"
     if args.literal_training:
         train_with_kge(args)
     else:

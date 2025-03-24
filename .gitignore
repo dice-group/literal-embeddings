@@ -8,3 +8,4 @@ pretrained_KGE/*
 exp_runner.py
 try*.*
 Extras/*
+Experiments_Literals/
