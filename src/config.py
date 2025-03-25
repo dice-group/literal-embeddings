@@ -48,6 +48,12 @@ def get_default_arguments():
         "that contains related data about embeddings.",
     )
     parser.add_argument(
+        "--full_storage_path",
+        type=str,
+        default=None,
+        help="A directory named to store the configurations of the experiments",
+    )
+    parser.add_argument(
         "--save_embeddings_as_csv",
         action="store_true",
         help="A flag for saving embeddings in csv file.",
@@ -304,7 +310,7 @@ def get_default_arguments():
     parser.add_argument(
         "--literal_training",
         action="store_true",
-        default=True,
+        default=False,
         help="Training of  Literal Embedding Model",
     )
     parser.add_argument(

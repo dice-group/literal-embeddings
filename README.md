@@ -2,37 +2,43 @@
 Neural Regression with Embeddings for Numeric Attribute ( Literals ) Prediction in Knowledge Graphs
 
 ## Installation and Requirements
-To execute the Literal Embedding model, please install the [dice-embeddings framework](https://github.com/dice-group/dice-embeddings)
+To execute the Literal Embedding model, please install the [dice-embeddings framework](https://github.com/dice-group/dice-embeddings). The requirements from dice-embedding framework is sufficient to run this project.
 
-##  Configurable Arguments
+## Dataset with Literals
 
-The following arguments can be used to configure the script. Default values are provided, and they will be used unless explicitly modified on the main script.
-
-### Default Arguments
-
-- `--dataset_dir`: `KGs / FamilyT`
-- `--dataset_dir_lit`: `KGs/FamilyL` 
-- `--batch_size`: `1024`
-- `--num_epochs`: `100`
-- `--embedding_dim`: `128`
-- `--lr`: `0.05`
-- `--combined_training`: `True`
-- `--lit_lr`: `0.0001`
-- `--lit_epochs`: `500`
-- `--save_embeddings_as_csv`: `False`
-- `--save_experiment`: `False`
-- `--pretrained_kge`: `False`
-- `--pretrained_kge_path`: `None`
-
-### `--combined_training`
-- If set to `True`, both the Knowledge Graph Embedding (KGE) model and the Literal Embedding model are trained together in a combined manner. If set to `False` (default), only the KGE model is trained.
-
-### `--pretrained_kge`
-If pretrained_kge is set to true, provide a valid path to a folder that contains a pre-trained KGE model. This will bypass all the combined training procedures and only run an instance of LiteralEmbedding model.
+The zip file KGs.zip contains all the dataset for experiments. For the first use, 
 
 
-### Usage
 
-Set the desired args within the main script and run 
 ```bash
-python main.py
+ unzip KGs.zip 
+```
+##  Experiment Types
+
+There are primairly two different types of experiments avaiable with this framework:
+
+### Training of Literal Embedding Model with Pre-traiend KGE model
+
+To train the Literal Embedding model with Pre-trained KGE models, set the flag --literal_training in the args. Use the flags such as --lit_lr and --num_epochs_lit for liearning rate and number of epochs for training the Literal Embedding Model. For training with Liteal Embedding model, provide the path to the folder with weights and configurations of the KGE model using `--pretrained_kge_path`. The literal dataset should be present inside the Literal folder of respective KGs dataset for link prediction task.
+
+Important: Provide the path for pretrained KGE model with configurations and model weights using the `--pretrained_kge_path`. Literal Embedding model takes the Knowledge Graph and Embedding dim from the pre-trained KGE configs.
+
+```bash
+python main.py --dataset_dir KGs/Family --lit_lr 0.05 --literal_training --pretrained_kge_path "Experiments/test_dir" --lit_epochs 200
+```
+### Training of Knowledge Graph Embedding  with Literal Embedding Model model
+
+To perfrom combined training of any KGE model and Literal Embedding Model, the flag combined trainng must be used. `--combined_training`.
+
+```bash
+python main.py  --model Keci --dataset_dir KGs/Family --lr 0.05 --embedding_dim 128 --num_epochs 256 --combined_training
+```
+
+### Training of Knowledge Graph Embedding  model
+
+
+To perfrom the training of Knowledge Graph Embedding model, just provide the model name, KGs dir and so on. 
+
+```bash
+python main.py  --model Keci --dataset_dir KGs/Family --lr 0.05 --embedding_dim 128 --num_epochs 256 
+```

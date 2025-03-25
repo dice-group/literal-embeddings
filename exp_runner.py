@@ -13,7 +13,7 @@ if args.literal_training:
         sub_path = os.path.join(exp_dir, model_name)
         args.num_literal_runs = 3
         args.pretrained_kge_path = sub_path
-        res = train_with_kge(args)
+        train_with_kge(args)
 
 else:
     dataset_name = "FB15k-237"

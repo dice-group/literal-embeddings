@@ -168,23 +168,22 @@ def train_with_kge(args):
         # Load the model weights into the model
         kge_model.load_state_dict(weights)
         e2idx_df = pd.read_csv(entity_to_idx_path, index_col=0)
-        
 
     except:
         print(" Building the KGE model failed: Fix args ")
         exit(0)
     args.embedding_dim = kge_model.embedding_dim
     args.model = kge_model.name
-    args.dataset_dir = configs['dataset_dir']
+    args.dataset_dir = configs["dataset_dir"]
     dataset_name = args.dataset_dir.split(os.sep)[-1]
     args.full_storage_path = (
         f"Experiments_Literals/{dataset_name}_{args.embedding_dim}/{args.model}"
     )
-    
+
     literal_dataset = LiteralData(
-            dataset_dir=args.dataset_dir, ent_idx=e2idx_df, normalization=args.lit_norm
-        )
-    
+        dataset_dir=args.dataset_dir, ent_idx=e2idx_df, normalization=args.lit_norm
+    )
+
     # Initialize storage for evaluation results and loss logs
     final_loss_df = None
     final_results_df = None  # Store results iteratively
@@ -207,7 +206,12 @@ def train_with_kge(args):
         )
         # Convert lit_results to DataFrame and rename columns
         df_results = pd.DataFrame(lit_results)
-        df_results.rename(columns={col: f"{col}_run_{i}" for col in df_results.columns if col != "relation"}, inplace=True)
+        df_results.rename(
+            columns={
+                col: f"{col}_run_{i}" for col in df_results.columns if col != "relation"
+            },
+            inplace=True,
+        )
 
         # Convert loss_log to DataFrame and rename
         df_loss = pd.DataFrame(loss_log)
@@ -216,7 +220,9 @@ def train_with_kge(args):
         # Initialize and add epoch index for the first run
         if final_loss_df is None:
             final_loss_df = df_loss.copy()
-            final_loss_df.insert(0, "epoch", range(1, len(df_loss) + 1))  # Add epoch numbers
+            final_loss_df.insert(
+                0, "epoch", range(1, len(df_loss) + 1)
+            )  # Add epoch numbers
         else:
             final_loss_df = pd.concat([final_loss_df, df_loss], axis=1)
 
@@ -224,15 +230,20 @@ def train_with_kge(args):
         if final_results_df is None:
             final_results_df = df_results.copy()
         else:
-            final_results_df = pd.merge(final_results_df, df_results, on="relation", how="left")
-
+            final_results_df = pd.merge(
+                final_results_df, df_results, on="relation", how="left"
+            )
 
     args.device = str(args.device)
     exp_configs = vars(args)
     os.makedirs(args.full_storage_path, exist_ok=True)
     # Save results
-    final_results_df.to_csv(os.path.join(args.full_storage_path, "lit_results.csv"), index=False)
-    final_loss_df.to_csv(os.path.join(args.full_storage_path, "lit_loss_log.csv"), index=False)
+    final_results_df.to_csv(
+        os.path.join(args.full_storage_path, "lit_results.csv"), index=False
+    )
+    final_loss_df.to_csv(
+        os.path.join(args.full_storage_path, "lit_loss_log.csv"), index=False
+    )
     with open(os.path.join(args.full_storage_path, "configuration.json"), "w") as f:
         json.dump(exp_configs, f, indent=4)
 
@@ -240,7 +251,6 @@ def train_with_kge(args):
 if __name__ == "__main__":
     args = get_default_arguments()
     args.learning_rate = args.lr
-    args.pretrained_kge_path = "pretrained_KGE/family-keci-32"
     if args.literal_training:
         train_with_kge(args)
     else:
