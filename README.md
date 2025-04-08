@@ -2,7 +2,15 @@
 Neural Regression with Embeddings for Numeric Attribute ( Literals ) Prediction in Knowledge Graphs
 
 ## Installation and Requirements
-To execute the Literal Embedding model, please install the [dice-embeddings framework](https://github.com/dice-group/dice-embeddings). The requirements from dice-embedding framework is sufficient to run this project.
+
+Create Conda Environment:
+```bash
+conda create --name litem  python=3.10 && conda activate litem
+```
+Install Dice embedding Framework
+```bash
+pip install -r requirements.txt
+```
 
 ## Dataset with Literals
 
@@ -14,6 +22,16 @@ The zip file KGs.zip contains all the datasets for experiments. For the first us
  unzip KGs.zip 
 ```
 ##  Experiment Types
+Currently for the compatability and reproducability of result, KGE models trained with this repo is only supproted to train literal embedding model. To train a KGE model use the following command:
+
+```bash
+python main.py  --model Keci --dataset_dir KGs/Family --lr 0.05 --embedding_dim 128 --num_epochs 256 --save_experiment
+```
+If you want to save the experiment on a desired path, provide the path in the CLI as:
+```bash
+python main.py  --model Keci --dataset_dir KGs/Family --lr 0.05 --embedding_dim 128 --num_epochs 256 --save_experiment --full_storage_path "Experiments/test_dir"
+```
+You can then provide such experiment path to train the Literal embedding Model.
 
 There are primarily three different types of experiments available with this framework:
 

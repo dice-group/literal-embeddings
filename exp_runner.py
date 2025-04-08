@@ -26,16 +26,17 @@ else:
         args.p = 0
         args.q = 1
         args.r = 1
-    
-        for combined in [ False,  True]:  # Run for both combined and non-combined training
+
+        for combined in [
+            False,
+            True,
+        ]:  # Run for both combined and non-combined training
             args.combined_training = combined
-    
+
             for model_name in exp_models:
                 args.learning_rate = args.lr
                 if args.combined_training:
-                    args.full_storage_path = (
-                        f"Experiments/{dataset_name}_{args.embedding_dim}_combined/{model_name}"
-                    )
+                    args.full_storage_path = f"Experiments/{dataset_name}_{args.embedding_dim}_combined/{model_name}"
                 else:
                     args.full_storage_path = (
                         f"Experiments/{dataset_name}_{args.embedding_dim}/{model_name}"
@@ -45,4 +46,3 @@ else:
                 print(
                     f"Experiment for {model_name} + {args.embedding_dim} (combined={args.combined_training}) completed and stored at {args.full_storage_path}"
                 )
-

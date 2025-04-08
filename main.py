@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 from datetime import datetime
+import pickle
 
 import pandas as pd
 import torch
@@ -21,7 +22,6 @@ from src.dataset import LiteralData
 from src.model import LiteralEmbeddings
 from src.trainer import train_literal_model, train_model
 from src.utils import evaluate_lit_preds
-
 
 
 def main(args):
@@ -46,7 +46,8 @@ def main(args):
         train_set_idx=entity_dataset.train_set,
         entity_idxs=entity_dataset.entity_to_idx,
         relation_idxs=entity_dataset.relation_to_idx,
-        form="EntityPrediction",label_smoothing_rate= args.label_smoothing_rate
+        form="EntityPrediction",
+        label_smoothing_rate=args.label_smoothing_rate,
     )
     train_dataloader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True
@@ -110,6 +111,7 @@ def main(args):
             model_name="model",
             full_storage_path=args.full_storage_path,
             save_embeddings_as_csv=args.save_embeddings_as_csv,
+            trainer=None,
         )
 
         print(f"The experiment results are stored at {args.full_storage_path}")
@@ -140,7 +142,7 @@ def train_with_kge(args):
 
         config_path = os.path.join(args.pretrained_kge_path, "configuration.json")
         model_path = os.path.join(args.pretrained_kge_path, "model.pt")
-        entity_to_idx_path = os.path.join(args.pretrained_kge_path, "entity_to_idx.csv")
+        entity_to_idx_path = os.path.join(args.pretrained_kge_path, "entity_to_idx.p")
 
         # Load configuration
         with open(config_path) as json_file:
@@ -156,7 +158,8 @@ def train_with_kge(args):
 
         # Load the model weights into the model
         kge_model.load_state_dict(weights)
-        e2idx_df = pd.read_csv(entity_to_idx_path, index_col=0)
+        with open(entity_to_idx_path, "rb") as f:
+            e2idx = pickle.load(f)
 
     except:
         print(" Building the KGE model failed: Fix args ")
@@ -165,18 +168,20 @@ def train_with_kge(args):
     args.model = kge_model.name
     args.dataset_dir = configs["dataset_dir"]
     dataset_name = args.dataset_dir.split(os.sep)[-1]
-    args.full_storage_path = (
-        f"Experiments_Literals/{dataset_name}_{args.embedding_dim}/{args.model}"
-    )
+    if args.full_storage_path is None:
+        args.full_storage_path = (
+            f"Experiments_Literals/{dataset_name}_{args.embedding_dim}/{args.model}"
+        )
 
     literal_dataset = LiteralData(
-        dataset_dir=args.dataset_dir, ent_idx=e2idx_df, normalization=args.lit_norm
+        dataset_dir=args.dataset_dir, ent_idx=e2idx, normalization=args.lit_norm
     )
 
     # Initialize storage for evaluation results and loss logs
     final_loss_df = None
-    final_results_df = None  # Store results iteratively
-
+    final_results_df = None
+    # for loop if we do not want to use a fixed seed to initialize the Literal Embedding model,
+    #  we can aggregate the literal prediction scores across multiple runs
     for i in range(args.num_literal_runs):
 
         Lit_model, loss_log = train_literal_model(
@@ -222,19 +227,20 @@ def train_with_kge(args):
             final_results_df = pd.merge(
                 final_results_df, df_results, on="relation", how="left"
             )
-
-    args.device = str(args.device)
-    exp_configs = vars(args)
-    os.makedirs(args.full_storage_path, exist_ok=True)
-    # Save results
-    final_results_df.to_csv(
-        os.path.join(args.full_storage_path, "lit_results.csv"), index=False
-    )
-    final_loss_df.to_csv(
-        os.path.join(args.full_storage_path, "lit_loss_log.csv"), index=False
-    )
-    with open(os.path.join(args.full_storage_path, "configuration.json"), "w") as f:
-        json.dump(exp_configs, f, indent=4)
+    if args.save_experiment:
+        args.device = str(args.device)
+        exp_configs = vars(args)
+        os.makedirs(args.full_storage_path, exist_ok=True)
+        # Save results
+        final_results_df.to_csv(
+            os.path.join(args.full_storage_path, "lit_results.csv"), index=False
+        )
+        final_loss_df.to_csv(
+            os.path.join(args.full_storage_path, "lit_loss_log.csv"), index=False
+        )
+        with open(os.path.join(args.full_storage_path, "configuration.json"), "w") as f:
+            json.dump(exp_configs, f, indent=4)
+        print("Experiments saved at", args.full_storage_path)
 
 
 if __name__ == "__main__":
