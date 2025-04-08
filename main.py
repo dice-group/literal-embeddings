@@ -23,6 +23,7 @@ from src.trainer import train_literal_model, train_model
 from src.utils import evaluate_lit_preds
 
 
+
 def main(args):
     # Save Experiment Results
     if args.full_storage_path is None:
@@ -33,6 +34,8 @@ def main(args):
 
     # Device setup
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed_all(args.random_seed)
 
     # Model and Dataset Initialization
     entity_dataset = read_or_load_kg(args, KG)
@@ -43,7 +46,7 @@ def main(args):
         train_set_idx=entity_dataset.train_set,
         entity_idxs=entity_dataset.entity_to_idx,
         relation_idxs=entity_dataset.relation_to_idx,
-        form="EntityPrediction",
+        form="EntityPrediction",label_smoothing_rate= args.label_smoothing_rate
     )
     train_dataloader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True
@@ -94,20 +97,6 @@ def main(args):
         )
 
         print("Training Literal model After Combined Entity-Literal Training")
-        Lit_model, _ = train_literal_model(
-            args=args,
-            literal_dataset=literal_dataset,
-            kge_model=kge_model,
-        )
-        # print(" Perfromance of Literal Model on Enhanced Entitiy Embeddings ")
-        # lit_results_enhanced = evaluate_lit_preds(
-        #     literal_dataset,
-        #     dataset_type="test",
-        #     model=kge_model,
-        #     literal_model=Lit_model,
-        #     device=args.device,
-        #     multi_regression=args.multi_regression,
-        # )
         if args.save_experiment:
             lit_results_file_path = os.path.join(
                 args.full_storage_path, "lit_results.json"

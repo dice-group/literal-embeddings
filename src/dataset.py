@@ -45,10 +45,7 @@ class LiteralData:
         df = df[df["head"].isin(self.entity_to_idx)]
         df["head_idx"] = df["head"].map(self.entity_to_idx)
         df["rel_idx"] = df["relation"].map(self.data_property_to_idx)
-        if self.normalization is None:
-            df["tails_norm"] = df["tail"]
-        else:
-            self.normalize(df)
+        self.normalize(df)
 
         # Compute mean and std for each rel_idx in a vectorized manner
 
@@ -101,6 +98,14 @@ class LiteralData:
             df["tail_norm"] = df.groupby("rel_idx")["tail"].transform(
                 lambda x: (x - x.min()) / (x.max() - x.min())
             )
+        elif self.normalization is None:
+            df["tail_norm"] = df["tail"]
+            self.normalization_params = None
+        else:
+            print("Normalization not Available, defaulting to NO NORMALIZATION")
+            self.normalization = None
+            self.normalization_params = None
+            df["tail_norm"] = df["tail"]
         return df
 
     def get_batch(self, entity_idx: torch.tensor, multi_regression=True):

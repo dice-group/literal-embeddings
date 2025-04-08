@@ -1,9 +1,7 @@
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.nn import HuberLoss
 from tqdm import tqdm
-
 from src.model import LiteralEmbeddings
 
 
@@ -16,6 +14,8 @@ def train_literal_model(
     Method to train Literal Embedding model standalone when a Pre-trained model is provided
     """
     device = args.device
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed_all(args.random_seed)
     loss_log = {"lit_loss": []}
 
     Literal_model = LiteralEmbeddings(
@@ -142,11 +142,9 @@ def train_model(
                 lit_loss_batch = F.l1_loss(yhat, y_true)
 
                 # begin combined loss procedure
-
-                # Define weights for each loss
                 w1, w2 = args.alpha, args.beta
-                batch_loss = (w1 * ent_loss_batch) + (w2 * lit_loss_batch)
-                # batch_loss = combine_losses(ent_loss_batch, lit_loss_batch)
+                batch_loss = (w1 * ent_loss_batch) + (w2 * lit_loss_batch) 
+
                 # backward loss and optimization step
                 batch_loss.backward()
                 optimizer.step()
@@ -175,8 +173,9 @@ def train_model(
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
 
-            tqdm_bar.set_postfix_str(f" loss_epoch={ent_loss:.5f}")
             avg_epoch_loss = ent_loss / len(train_dataloader)
+            tqdm_bar.set_postfix_str(f" loss_epoch={avg_epoch_loss:.5f}")
+            
             loss_log["ent_loss"].append(avg_epoch_loss.item())
 
     return model, Literal_model, loss_log

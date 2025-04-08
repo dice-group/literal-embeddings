@@ -4,18 +4,19 @@ from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 
 def denormalize(row, normalization_params, norm_type="z-norm"):
+    if norm_type is None:
+        return row["preds_norm"]
     type_stats = normalization_params[row["rel_idx"]]
-
     if norm_type == "z-norm":
-        return (row["preds_raw"] * type_stats["std"]) + type_stats["mean"]
+        return (row["preds_norm"] * type_stats["std"]) + type_stats["mean"]
 
     elif norm_type == "min-max":
-        return (row["preds_raw"] * (type_stats["max"] - type_stats["min"])) + type_stats[
+        return (row["preds_norm"] * (type_stats["max"] - type_stats["min"])) + type_stats[
             "min"
         ]
 
     else:
-        raise ValueError("Unsupported normalization type. Use 'z-norm' or 'min-max'.")
+        raise ValueError("Unsupported normalization type. Use 'z-norm','min-max' or None.")
 
 
 # Compute MAE and RMSE for each relation
@@ -62,24 +63,25 @@ def evaluate_lit_preds(
         predictions = literal_model.forward(entity_embeddings, properties)
 
     if multi_regression:
-        target_df["preds_raw"] = predictions.gather(1, properties.view(-1, 1)).cpu().numpy()
+        target_df["preds_norm"] = predictions.gather(1, properties.view(-1, 1)).cpu().numpy()
     else:
-        target_df["preds_raw"] = predictions.cpu().numpy()
+        target_df["preds_norm"] = predictions.cpu().numpy()
 
-    if literal_dataset.normalization is None:
-        target_df['preds'] = target_df['preds_raw']
-    else:
-        target_df["preds"] = target_df.apply(
-            denormalize,
-            axis=1,
-            args=(
-                literal_dataset.normalization_params,
-                literal_dataset.normalization,
-            ),
-        )
+    
+    target_df["preds"] = target_df.apply(
+        denormalize,
+        axis=1,
+        args=(
+            literal_dataset.normalization_params,
+            literal_dataset.normalization,
+        ),
+    )
 
     error_metrics = target_df.groupby("relation").apply(compute_errors).reset_index()
     pd.options.display.float_format = "{:.6f}".format  # 6 decimal places
     print("Literal Prediction Results on Test Set")
     print(error_metrics)
     return error_metrics
+
+
+

@@ -4,7 +4,7 @@ import os
 
 args = get_default_arguments()
 exp_models = ["TransE", "DistMult", "Keci", "ComplEx", "OMult", "QMult", "DeCaL"]
-# exp_models = ["TransE"]
+# exp_models = ["DeCaL"]
 exp_dir = "Experiments/Family_128"
 args.literal_training = False
 
@@ -16,26 +16,33 @@ if args.literal_training:
         train_with_kge(args)
 
 else:
-    dataset_name = "FB15k-237"
-    args.dataset_dir = f"KGs/{dataset_name}"
-    args.lr = 0.05
-    args.embedding_dim = 128
-    args.num_epochs = 256
-    args.save_experiment = True
-    args.combined_training = True
+    dataset_names = ["YAGO15k"]
+    for dataset_name in dataset_names:
+        args.dataset_dir = f"KGs/{dataset_name}"
+        args.lr = 0.05
+        args.embedding_dim = 32
+        args.num_epochs = 256
+        args.save_experiment = True
+        args.p = 0
+        args.q = 1
+        args.r = 1
+    
+        for combined in [ False,  True]:  # Run for both combined and non-combined training
+            args.combined_training = combined
+    
+            for model_name in exp_models:
+                args.learning_rate = args.lr
+                if args.combined_training:
+                    args.full_storage_path = (
+                        f"Experiments/{dataset_name}_{args.embedding_dim}_combined/{model_name}"
+                    )
+                else:
+                    args.full_storage_path = (
+                        f"Experiments/{dataset_name}_{args.embedding_dim}/{model_name}"
+                    )
+                args.model = model_name
+                main(args)
+                print(
+                    f"Experiment for {model_name} + {args.embedding_dim} (combined={args.combined_training}) completed and stored at {args.full_storage_path}"
+                )
 
-    for model_name in exp_models:
-        args.learning_rate = args.lr
-        if args.combined_training:
-            args.full_storage_path = (
-                f"Experiments/{dataset_name}_{args.embedding_dim}_combined/{model_name}"
-            )
-        else:
-            args.full_storage_path = (
-                f"Experiments/{dataset_name}_{args.embedding_dim}/{model_name}"
-            )
-        args.model = model_name
-        main(args)
-        print(
-            f"Experiment for {model_name}+{args.embedding_dim} completed and stored at {args.full_storage_path}"
-        )
