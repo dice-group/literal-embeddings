@@ -6,6 +6,12 @@ Neural Regression with Embeddings for Numeric Attribute ( Literals ) Prediction 
 Create Conda Environment:
 ```bash
 git clone https://github.com/dice-group/literal-embeddings.git
+```
+```bash
+cd literal-embeddings
+```
+
+```bash
 conda create --name litem  python=3.10 && conda activate litem
 ```
 Install Dice embedding Framework
