@@ -1,27 +1,21 @@
 ### Main File
-import argparse
 import json
 import os
 from datetime import datetime
-import pickle
 
 import pandas as pd
 import torch
-import torch.nn.functional as F
-import torch.optim as optim
 from src.config import get_default_arguments
 from dicee.dataset_classes import KvsAll
 from dicee.evaluator import Evaluator
 from dicee.knowledge_graph import KG
-from dicee.knowledge_graph_embeddings import KGE
-from dicee.models import Keci, TransE
 from dicee.static_funcs import intialize_model, read_or_load_kg, store
 from torch.utils.data import DataLoader
 
 from src.dataset import LiteralData
 from src.model import LiteralEmbeddings
 from src.trainer import train_literal_model, train_model
-from src.utils import evaluate_lit_preds
+from src.utils import evaluate_lit_preds, load_model_components
 
 
 def main(args):
@@ -132,43 +126,20 @@ def main(args):
 
 def train_with_kge(args):
 
+    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    kge_model, configs, e2idx = load_model_components(args.pretrained_kge_path)
+    args.embedding_dim = kge_model.embedding_dim
+    args.model = kge_model.name
+    args.dataset_dir = configs["dataset_dir"]
+    dataset_name = os.path.basename(args.dataset_dir)
+
     print(
         "Training Literal Embedding model using pre-trained KGE model at %s"
         % args.pretrained_kge_path
     )
-    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    try:
-
-        config_path = os.path.join(args.pretrained_kge_path, "configuration.json")
-        model_path = os.path.join(args.pretrained_kge_path, "model.pt")
-        entity_to_idx_path = os.path.join(args.pretrained_kge_path, "entity_to_idx.p")
-
-        # Load configuration
-        with open(config_path) as json_file:
-            configs = json.load(json_file)
-
-        # Load model weights
-        weights = torch.load(
-            model_path, map_location=torch.device("cpu"), weights_only=True
-        )
-
-        # Initialize the model
-        kge_model, _ = intialize_model(configs, 0)
-
-        # Load the model weights into the model
-        kge_model.load_state_dict(weights)
-        with open(entity_to_idx_path, "rb") as f:
-            e2idx = pickle.load(f)
-
-    except:
-        print(" Building the KGE model failed: Fix args ")
-        exit(0)
-    args.embedding_dim = kge_model.embedding_dim
-    args.model = kge_model.name
-    args.dataset_dir = configs["dataset_dir"]
-    dataset_name = args.dataset_dir.split(os.sep)[-1]
-    if args.full_storage_path is None:
+    if not args.full_storage_path:
         args.full_storage_path = (
             f"Experiments_Literals/{dataset_name}_{args.embedding_dim}/{args.model}"
         )

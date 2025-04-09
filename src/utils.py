@@ -1,5 +1,11 @@
 import pandas as pd
 import torch
+import os
+import pickle
+from typing import Tuple, Dict, Any
+import json
+from dicee.static_funcs import intialize_model
+from dicee.knowledge_graph_embeddings import KGE
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 
@@ -11,12 +17,14 @@ def denormalize(row, normalization_params, norm_type="z-norm"):
         return (row["preds_norm"] * type_stats["std"]) + type_stats["mean"]
 
     elif norm_type == "min-max":
-        return (row["preds_norm"] * (type_stats["max"] - type_stats["min"])) + type_stats[
-            "min"
-        ]
+        return (
+            row["preds_norm"] * (type_stats["max"] - type_stats["min"])
+        ) + type_stats["min"]
 
     else:
-        raise ValueError("Unsupported normalization type. Use 'z-norm','min-max' or None.")
+        raise ValueError(
+            "Unsupported normalization type. Use 'z-norm','min-max' or None."
+        )
 
 
 # Compute MAE and RMSE for each relation
@@ -59,15 +67,18 @@ def evaluate_lit_preds(
 
     with torch.no_grad():
         entity_embeddings = model.entity_embeddings(entities)
-        entity_embeddings, properties = entity_embeddings.to(device), properties.to(device)
+        entity_embeddings, properties = entity_embeddings.to(device), properties.to(
+            device
+        )
         predictions = literal_model.forward(entity_embeddings, properties)
 
     if multi_regression:
-        target_df["preds_norm"] = predictions.gather(1, properties.view(-1, 1)).cpu().numpy()
+        target_df["preds_norm"] = (
+            predictions.gather(1, properties.view(-1, 1)).cpu().numpy()
+        )
     else:
         target_df["preds_norm"] = predictions.cpu().numpy()
 
-    
     target_df["preds"] = target_df.apply(
         denormalize,
         axis=1,
@@ -84,4 +95,55 @@ def evaluate_lit_preds(
     return error_metrics
 
 
+def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
+    """Load configuration and weights for a KGE model or a direct KGE model.
 
+    Args:
+        path (str): The path to the directory containing the model's files.
+
+    Returns:
+        Tuple[Any, Dict]: A tuple containing the loaded model and its configuration.
+
+    Raises:
+        FileNotFoundError: If one or more required files do not exist.
+        Exception: For any other error that occurs during the loading process.
+    """
+    try:
+        kge_obj = KGE(path=kge_path)
+        kge_model = kge_obj.model
+        config = kge_obj.configs
+        entity_to_idx = kge_obj.entity_to_idx
+    except Exception as e:
+        print("Cannot load as dicee KGE model, Trying manual load:", str(e))
+        try:
+            config_path = os.path.join(kge_path, "configuration.json")
+            model_path = os.path.join(kge_path, "model.pt")
+            if os.path.isfile(kge_path + "/entity_to_idx.p"):
+                entity_to_idx_path = os.path.join(kge_path, "entity_to_idx.p")
+                with open(entity_to_idx_path, "rb") as f:
+                    entity_to_idx = pickle.load(f)
+            elif os.path.isfile(kge_path + "/entity_to_idx.csv"):
+                entity_to_idx_path = os.path.join(kge_path, "entity_to_idx.csv")
+                e2idx_df = pd.read_csv(entity_to_idx_path)
+                entity_to_idx = {row["entity"]: idx for idx, row in e2idx_df.iterrows()}
+            else:
+                entity_to_idx_path = None
+
+            if not all(os.path.exists(file) for file in [config_path, model_path]):
+                raise FileNotFoundError("One or more required files do not exist.")
+
+            with open(config_path, "r") as f:
+                config = json.load(f)
+
+            weights = torch.load(model_path, map_location="cpu")
+
+            kge_model, _ = intialize_model(config, 0)
+            kge_model.load_state_dict(weights)
+
+        except Exception as e:
+            print(
+                "Building the KGE model failed, check pre-trained KGE directory", str(e)
+            )
+            exit(0)
+
+    return kge_model, config, entity_to_idx
