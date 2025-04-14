@@ -1,5 +1,5 @@
-import json
 import argparse
+import json
 
 
 def get_default_arguments():

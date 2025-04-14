@@ -1,11 +1,12 @@
-import pandas as pd
-import torch
+import json
 import os
 import pickle
-from typing import Tuple, Dict, Any
-import json
-from dicee.static_funcs import intialize_model
+from typing import Any, Dict, Tuple
+
+import pandas as pd
+import torch
 from dicee.knowledge_graph_embeddings import KGE
+from dicee.static_funcs import intialize_model
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 

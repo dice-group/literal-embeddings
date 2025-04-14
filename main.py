@@ -5,15 +5,17 @@ from datetime import datetime
 
 import pandas as pd
 import torch
-from src.config import get_default_arguments
 from dicee.dataset_classes import KvsAll
 from dicee.evaluator import Evaluator
 from dicee.knowledge_graph import KG
 from dicee.static_funcs import intialize_model, read_or_load_kg, store
 from torch.utils.data import DataLoader
 
+from src.config import get_default_arguments
 from src.dataset import LiteralData
 from src.model import LiteralEmbeddings
+from src.static_funcs import (save_kge_experiments, save_literal_experiments,
+                              train_literal_n_runs)
 from src.trainer import train_literal_model, train_model
 from src.utils import evaluate_lit_preds, load_model_components
 
@@ -36,6 +38,7 @@ def main(args):
     args.num_entities = entity_dataset.num_entities
     args.num_relations = entity_dataset.num_relations
 
+    # kvsall dataset initialization
     train_dataset = KvsAll(
         train_set_idx=entity_dataset.train_set,
         entity_idxs=entity_dataset.entity_to_idx,
@@ -47,12 +50,14 @@ def main(args):
         train_dataset, batch_size=args.batch_size, shuffle=True
     )
 
+    # initialize KGE model using dicee framework model initialization
     kge_model, _ = intialize_model(vars(args), 0)
     literal_dataset = None
     Literal_model = None
+    lit_results = None
 
     if args.combined_training:
-
+        # intialize literal embedding model and dataset for combined training with KGE
         literal_dataset = LiteralData(
             dataset_dir=args.dataset_dir,
             ent_idx=entity_dataset.entity_to_idx,
@@ -73,7 +78,7 @@ def main(args):
         Literal_model,
     )
 
-    # Evaluating the model
+    # Evaluating the KGE model on Link Prediction task MRR, H@1,3,10
     evaluator = Evaluator(args=args)
     kge_model.to("cpu")
     evaluator.eval(
@@ -81,6 +86,10 @@ def main(args):
         trained_model=kge_model,
         form_of_labelling="EntityPrediction",
     )
+
+    # can be used to skip literal eval if all literal data is used as train
+    # can be used also if no test/val split avilable
+    # use args.eval_literals = Flase to skip this step
     if args.combined_training and args.eval_literals:
         lit_results = evaluate_lit_preds(
             literal_dataset,
@@ -91,14 +100,7 @@ def main(args):
             multi_regression=args.multi_regression,
         )
 
-        print("Training Literal model After Combined Entity-Literal Training")
-        if args.save_experiment:
-            lit_results_file_path = os.path.join(
-                args.full_storage_path, "lit_results.json"
-            )
-            with open(lit_results_file_path, "w") as f:
-                json.dump(lit_results.to_dict(orient="records"), f, indent=4)
-
+    # save kge model, training configs,
     if args.save_experiment:
         store(
             trained_model=kge_model,
@@ -106,28 +108,18 @@ def main(args):
             full_storage_path=args.full_storage_path,
             save_embeddings_as_csv=args.save_embeddings_as_csv,
         )
-
-        print(f"The experiment results are stored at {args.full_storage_path}")
-
-        df_loss_log = pd.DataFrame.from_dict(loss_log, orient="index").transpose()
-        df_loss_log.to_csv(
-            os.path.join(args.full_storage_path, "loss_log.tsv"), sep="\t", index=False
-        )
-        args.device = str(args.device)
-        exp_configs = vars(args)
-
-        with open(os.path.join(args.full_storage_path, "configuration.json"), "w") as f:
-            json.dump(exp_configs, f, indent=4)
-
-        with open(os.path.join(args.full_storage_path, "lp_results.json"), "w") as f:
-            json.dump(evaluator.report, f, indent=4)
+        save_kge_experiments(args=args, loss_log=loss_log, lit_results=lit_results)
 
 
 def train_with_kge(args):
 
+    # torch related initializations
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed_all(args.random_seed)
 
-    kge_model, configs, e2idx, r2idx = load_model_components(args.pretrained_kge_path)
+    # load KGE model as dicee KGE object or local KGE object
+    kge_model, configs, e2idx, _ = load_model_components(args.pretrained_kge_path)
     args.embedding_dim = kge_model.embedding_dim
     args.model = kge_model.name
     args.dataset_dir = configs["dataset_dir"]
@@ -146,71 +138,37 @@ def train_with_kge(args):
     literal_dataset = LiteralData(
         dataset_dir=args.dataset_dir, ent_idx=e2idx, normalization=args.lit_norm
     )
+    if args.num_literal_runs > 1:
+        lit_loss, lit_results = train_literal_n_runs(
+            args=args, kge_model=kge_model, literal_dataset=literal_dataset
+        )
 
-    # Initialize storage for evaluation results and loss logs
-    final_loss_df = None
-    final_results_df = None
-    # for loop if we do not want to use a fixed seed to initialize the Literal Embedding model,
-    #  we can aggregate the literal prediction scores across multiple runs
-    for i in range(args.num_literal_runs):
+    else:
+        Literal_model = LiteralEmbeddings(
+            num_of_data_properties=literal_dataset.num_data_properties,
+            embedding_dims=kge_model.embedding_dim,
+            multi_regression=args.multi_regression,
+        )
 
-        Lit_model, loss_log = train_literal_model(
+        Literal_model, lit_loss = train_literal_model(
             args=args,
             literal_dataset=literal_dataset,
             kge_model=kge_model,
+            Literal_model=Literal_model,
         )
 
-        lit_results = evaluate_lit_preds(
-            literal_dataset,
-            dataset_type="test",
-            model=kge_model,
-            literal_model=Lit_model,
-            device=args.device,
-            multi_regression=args.multi_regression,
-        )
-        # Convert lit_results to DataFrame and rename columns
-        df_results = pd.DataFrame(lit_results)
-        df_results.rename(
-            columns={
-                col: f"{col}_run_{i}" for col in df_results.columns if col != "relation"
-            },
-            inplace=True,
-        )
-
-        # Convert loss_log to DataFrame and rename
-        df_loss = pd.DataFrame(loss_log)
-        df_loss.rename(columns={"lit_loss": f"lit_loss_run_{i}"}, inplace=True)
-
-        # Initialize and add epoch index for the first run
-        if final_loss_df is None:
-            final_loss_df = df_loss.copy()
-            final_loss_df.insert(
-                0, "epoch", range(1, len(df_loss) + 1)
-            )  # Add epoch numbers
-        else:
-            final_loss_df = pd.concat([final_loss_df, df_loss], axis=1)
-
-        # Initialize results DataFrame on first run
-        if final_results_df is None:
-            final_results_df = df_results.copy()
-        else:
-            final_results_df = pd.merge(
-                final_results_df, df_results, on="relation", how="left"
+        if args.eval_literals:
+            lit_results = evaluate_lit_preds(
+                literal_dataset,
+                dataset_type="test",
+                model=kge_model,
+                literal_model=Literal_model,
+                device=args.device,
+                multi_regression=args.multi_regression,
             )
+
     if args.save_experiment:
-        args.device = str(args.device)
-        exp_configs = vars(args)
-        os.makedirs(args.full_storage_path, exist_ok=True)
-        # Save results
-        final_results_df.to_csv(
-            os.path.join(args.full_storage_path, "lit_results.csv"), index=False
-        )
-        final_loss_df.to_csv(
-            os.path.join(args.full_storage_path, "lit_loss_log.csv"), index=False
-        )
-        with open(os.path.join(args.full_storage_path, "configuration.json"), "w") as f:
-            json.dump(exp_configs, f, indent=4)
-        print("Experiments saved at", args.full_storage_path)
+        save_literal_experiments(args=args, loss_df=lit_loss, results_df=lit_results)
 
 
 if __name__ == "__main__":

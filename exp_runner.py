@@ -1,6 +1,7 @@
-from src.config import get_default_arguments
-from main import main, train_with_kge
 import os
+
+from main import main, train_with_kge
+from src.config import get_default_arguments
 
 args = get_default_arguments()
 exp_models = ["TransE", "DistMult", "Keci", "ComplEx", "OMult", "QMult", "DeCaL"]
@@ -11,7 +12,8 @@ args.literal_training = False
 if args.literal_training:
     for model_name in exp_models:
         sub_path = os.path.join(exp_dir, model_name)
-        args.num_literal_runs = 3
+        args.num_literal_runs = 1
+        args.save_experiment = True
         args.pretrained_kge_path = sub_path
         train_with_kge(args)
 

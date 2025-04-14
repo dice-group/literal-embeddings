@@ -2,27 +2,17 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
+
 from src.model import LiteralEmbeddings
 
 
-def train_literal_model(
-    args,
-    literal_dataset: None,
-    kge_model: None,
-):
+def train_literal_model(args, literal_dataset, kge_model, Literal_model=None):
     """
     Method to train Literal Embedding model standalone when a Pre-trained model is provided
     """
     device = args.device
-    torch.manual_seed(args.random_seed)
-    torch.cuda.manual_seed_all(args.random_seed)
     loss_log = {"lit_loss": []}
-
-    Literal_model = LiteralEmbeddings(
-        num_of_data_properties=literal_dataset.num_data_properties,
-        embedding_dims=kge_model.embedding_dim,
-        multi_regression=args.multi_regression,
-    ).to(args.device)
+    Literal_model = Literal_model.to(device)
 
     lit_entities = literal_dataset.train_data["triples"][:, 0].long()
     lit_properties = literal_dataset.train_data["triples"][:, 1].long()
@@ -43,7 +33,11 @@ def train_literal_model(
         y_true = literal_dataset.train_data["tails_norm"]
 
     ent_ebds = kge_model.entity_embeddings(lit_entities)
-    ent_ebds, lit_properties, y_true = ent_ebds.to(device), lit_properties.to(device), y_true.to(device)
+    ent_ebds, lit_properties, y_true = (
+        ent_ebds.to(device),
+        lit_properties.to(device),
+        y_true.to(device),
+    )
 
     optimizer = optim.Adam(Literal_model.parameters(), lr=args.lit_lr)
     for epoch in (tqdm_bar := tqdm(range(args.lit_epochs))):
@@ -81,10 +75,10 @@ def train_model(
     """
     device = args.device
     model.to(device)
-    
+
     loss_log = {"ent_loss": []}
     y_true, lit_entities, lit_properties = None, None, None
-    
+
     bce_loss_fn = torch.nn.BCEWithLogitsLoss()
     if args.combined_training:
 
@@ -143,7 +137,7 @@ def train_model(
 
                 # begin combined loss procedure
                 w1, w2 = args.alpha, args.beta
-                batch_loss = (w1 * ent_loss_batch) + (w2 * lit_loss_batch) 
+                batch_loss = (w1 * ent_loss_batch) + (w2 * lit_loss_batch)
 
                 # backward loss and optimization step
                 batch_loss.backward()
@@ -175,7 +169,7 @@ def train_model(
 
             avg_epoch_loss = ent_loss / len(train_dataloader)
             tqdm_bar.set_postfix_str(f" loss_epoch={avg_epoch_loss:.5f}")
-            
+
             loss_log["ent_loss"].append(avg_epoch_loss.item())
 
     return model, Literal_model, loss_log
