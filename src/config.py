@@ -320,6 +320,12 @@ def get_default_arguments():
         help="Perfrom multi-output regression for Literal Embedding model",
     )
     parser.add_argument(
+        "--eval_literals",
+        action="store_true",
+        default=True,
+        help="Evaluate Literal Embedding model on Test set. Set false only to use literals for combined training",
+    )
+    parser.add_argument(
         "--save_experiment",
         action="store_true",
         default=False,

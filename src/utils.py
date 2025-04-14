@@ -113,11 +113,13 @@ def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
         kge_model = kge_obj.model
         config = kge_obj.configs
         entity_to_idx = kge_obj.entity_to_idx
+        relation_to_idx = kge_obj.relation_to_idx
     except Exception as e:
-        print("Cannot load as dicee KGE model, Trying manual load:", str(e))
+        print("Cannot load as dicee KGE model.", str(e), "Trying manual load.")
         try:
             config_path = os.path.join(kge_path, "configuration.json")
             model_path = os.path.join(kge_path, "model.pt")
+
             if os.path.isfile(kge_path + "/entity_to_idx.p"):
                 entity_to_idx_path = os.path.join(kge_path, "entity_to_idx.p")
                 with open(entity_to_idx_path, "rb") as f:
@@ -128,6 +130,19 @@ def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
                 entity_to_idx = {row["entity"]: idx for idx, row in e2idx_df.iterrows()}
             else:
                 entity_to_idx_path = None
+
+            if os.path.isfile(kge_path + "/relation_to_idx.p"):
+                relation_to_idx_path = os.path.join(kge_path, "relation_to_idx.p")
+                with open(relation_to_idx_path, "rb") as f:
+                    relation_to_idx = pickle.load(f)
+            elif os.path.isfile(kge_path + "/relation_to_idx.csv"):
+                relation_to_idx_path = os.path.join(kge_path, "relation_to_idx.csv")
+                r2idx_df = pd.read_csv(relation_to_idx_path)
+                relation_to_idx = {
+                    row["relation"]: idx for idx, row in r2idx_df.iterrows()
+                }
+            else:
+                relation_to_idx_path = None
 
             if not all(os.path.exists(file) for file in [config_path, model_path]):
                 raise FileNotFoundError("One or more required files do not exist.")
@@ -145,5 +160,5 @@ def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
                 "Building the KGE model failed, check pre-trained KGE directory", str(e)
             )
             exit(0)
-
-    return kge_model, config, entity_to_idx
+        print("Manual KGE load Successfull!!")
+    return kge_model, config, entity_to_idx, relation_to_idx

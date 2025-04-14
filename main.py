@@ -81,7 +81,7 @@ def main(args):
         trained_model=kge_model,
         form_of_labelling="EntityPrediction",
     )
-    if args.combined_training:
+    if args.combined_training and args.eval_literals:
         lit_results = evaluate_lit_preds(
             literal_dataset,
             dataset_type="test",
