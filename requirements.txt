@@ -1,1 +1,1 @@
-dicee==0.1.4
+git+https://github.com/dice-group/dice-embeddings.git@af2b131#egg=dicee

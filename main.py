@@ -105,7 +105,6 @@ def main(args):
             model_name="model",
             full_storage_path=args.full_storage_path,
             save_embeddings_as_csv=args.save_embeddings_as_csv,
-            trainer=None,
         )
 
         print(f"The experiment results are stored at {args.full_storage_path}")
@@ -128,7 +127,7 @@ def train_with_kge(args):
 
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    kge_model, configs, e2idx = load_model_components(args.pretrained_kge_path)
+    kge_model, configs, e2idx, r2idx = load_model_components(args.pretrained_kge_path)
     args.embedding_dim = kge_model.embedding_dim
     args.model = kge_model.name
     args.dataset_dir = configs["dataset_dir"]
