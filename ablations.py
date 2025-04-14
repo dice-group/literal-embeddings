@@ -100,7 +100,7 @@ def evaluate_ablations(return_df=False):
     # Optional: sort by accuracy or model name
     df = df.sort_values(by="model").reset_index(drop=True)
 
-    df.to_csv("Experiment/Abalations/scores.csv", sep="\t", index=False)
+    df.to_csv("Experiments/Abalations/scores.csv", sep="\t", index=False)
 
     return df if return_df else None
 
