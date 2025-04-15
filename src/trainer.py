@@ -4,6 +4,7 @@ import torch.optim as optim
 from tqdm import tqdm
 
 from src.model import LiteralEmbeddings
+from src.utils import UncertaintyWeightedLoss
 
 
 def train_literal_model(args, literal_dataset, kge_model, Literal_model=None):
@@ -97,7 +98,7 @@ def train_model(
                 {"params": model.parameters(), "lr": args.lr},
             ]
         )
-
+    criterion = UncertaintyWeightedLoss()
     for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
         ent_loss = 0
         lit_loss = 0
@@ -137,7 +138,7 @@ def train_model(
 
                 # begin combined loss procedure
                 w1, w2 = args.alpha, args.beta
-                batch_loss = (w1 * ent_loss_batch) + (w2 * lit_loss_batch)
+                batch_loss = criterion(ent_loss_batch, lit_loss_batch)
 
                 # backward loss and optimization step
                 batch_loss.backward()
