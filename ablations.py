@@ -66,7 +66,7 @@ def calculate_abalation_scores(exp_path: str):
 
 
 def evaluate_ablations(return_df=False):
-    original_path = []
+    original_path = "Experiments/synthetic/Synthetic_32_combined"
     random_path = []
     # Step 1: Loop through all folders under actual and random paths
     original_scores = {}
@@ -77,11 +77,11 @@ def evaluate_ablations(return_df=False):
             original_scores[model_name] = score
 
     random_scores = {}
-    for folder in os.listdir(random_path):
-        model_dir = os.path.join(random_path, folder)
-        if os.path.isdir(model_dir):
-            model_name, score = calculate_abalation_scores(model_dir)
-            random_scores[model_name] = score
+    # for folder in os.listdir(random_path):
+    #     model_dir = os.path.join(random_path, folder)
+    #     if os.path.isdir(model_dir):
+    #         model_name, score = calculate_abalation_scores(model_dir)
+    #         random_scores[model_name] = score
 
     # Step 2: Create DataFrame
     # Merge both sets using model name as the key
@@ -101,8 +101,10 @@ def evaluate_ablations(return_df=False):
 
     # Optional: sort by accuracy or model name
     df = df.sort_values(by="model").reset_index(drop=True)
+    storage_path = "Experiments/Ablations"
+    os.makedirs(storage_path, exist_ok=True)
 
-    df.to_csv("Experiments/Abalations/scores.csv", sep="\t", index=False)
+    df.to_csv(f'{storage_path}/scores.csv', sep="\t", index=False)
 
     return df if return_df else None
 
