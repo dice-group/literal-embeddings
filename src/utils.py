@@ -173,12 +173,30 @@ class UncertaintyWeightedLoss(nn.Module):
         self.log_sigma_ent = nn.Parameter(torch.tensor(0.0))  # for entity loss
         self.log_sigma_lit = nn.Parameter(torch.tensor(0.0))  # for literal loss
 
-    def forward(self, loss_ent, loss_lit):
-        # Uncertainty-weighted total loss
-        total_loss = (
-            torch.exp(-self.log_sigma_ent) * loss_ent
-            + torch.exp(-self.log_sigma_lit) * loss_lit
-            + self.log_sigma_ent
-            + self.log_sigma_lit
-        )
+    def forward(self, loss_ent, loss_lit=None):
+        """
+        Uncertainty-weighted total loss.
+        - If `loss_lit` is provided, it computes the combined loss using both entity and literal losses.
+        - If `loss_lit` is None, it only computes the weighted entity loss.
+
+        Parameters:
+        - loss_ent: Entity loss (required)
+        - loss_lit: Literal loss (optional, defaults to None)
+
+        Returns:
+        - total_loss: The weighted sum of the losses
+        """
+
+        if loss_lit is not None:
+            # Both entity and literal losses are present
+            total_loss = (
+                torch.exp(-self.log_sigma_ent) * loss_ent
+                + torch.exp(-self.log_sigma_lit) * loss_lit
+                + self.log_sigma_ent
+                + self.log_sigma_lit
+            )
+        else:
+            # Only entity loss is present, apply uncertainty weighting only to entity loss
+            total_loss = torch.exp(-self.log_sigma_ent) * loss_ent + self.log_sigma_ent
+
         return total_loss

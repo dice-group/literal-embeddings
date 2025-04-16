@@ -12,10 +12,13 @@ from dicee.static_funcs import intialize_model, read_or_load_kg, store
 from torch.utils.data import DataLoader
 
 from src.config import get_default_arguments
-from src.dataset import LiteralData
+from src.dataset import LiteralDataset
 from src.model import LiteralEmbeddings
-from src.static_funcs import (save_kge_experiments, save_literal_experiments,
-                              train_literal_n_runs)
+from src.static_funcs import (
+    save_kge_experiments,
+    save_literal_experiments,
+    train_literal_n_runs,
+)
 from src.trainer import train_literal_model, train_model
 from src.utils import evaluate_lit_preds, load_model_components
 
@@ -49,6 +52,16 @@ def main(args):
     train_dataloader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True
     )
+    if args.log_validation:
+        valid_dataset = KvsAll(
+            train_set_idx=entity_dataset.valid_set,
+            entity_idxs=entity_dataset.entity_to_idx,
+            relation_idxs=entity_dataset.relation_to_idx,
+            form="EntityPrediction",
+        )
+        valid_dataloader = DataLoader(
+            valid_dataset, batch_size=args.batch_size, shuffle=True
+        )
 
     # initialize KGE model using dicee framework model initialization
     kge_model, _ = intialize_model(vars(args), 0)
@@ -58,7 +71,7 @@ def main(args):
 
     if args.combined_training:
         # intialize literal embedding model and dataset for combined training with KGE
-        literal_dataset = LiteralData(
+        literal_dataset = LiteralDataset(
             dataset_dir=args.dataset_dir,
             ent_idx=entity_dataset.entity_to_idx,
             normalization=args.lit_norm,
@@ -76,6 +89,7 @@ def main(args):
         args,
         literal_dataset,
         Literal_model,
+        valid_dataloader,
     )
 
     # Evaluating the KGE model on Link Prediction task MRR, H@1,3,10
@@ -135,7 +149,7 @@ def train_with_kge(args):
             f"Experiments_Literals/{dataset_name}_{args.embedding_dim}/{args.model}"
         )
 
-    literal_dataset = LiteralData(
+    literal_dataset = LiteralDataset(
         dataset_dir=args.dataset_dir, ent_idx=e2idx, normalization=args.lit_norm
     )
     if args.num_literal_runs > 1:
