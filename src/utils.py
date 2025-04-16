@@ -9,6 +9,7 @@ from dicee.knowledge_graph_embeddings import KGE
 from dicee.static_funcs import intialize_model
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 import torch.nn as nn
+import torch.nn as nn
 
 
 def denormalize(row, normalization_params, norm_type="z-norm"):
@@ -199,4 +200,22 @@ class UncertaintyWeightedLoss(nn.Module):
             # Only entity loss is present, apply uncertainty weighting only to entity loss
             total_loss = torch.exp(-self.log_sigma_ent) * loss_ent + self.log_sigma_ent
 
+        return total_loss
+
+
+class UncertaintyWeightedLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Learnable log variances (log σ²) for numerical stability and positivity
+        self.log_sigma_ent = nn.Parameter(torch.tensor(0.0))  # for entity loss
+        self.log_sigma_lit = nn.Parameter(torch.tensor(0.0))  # for literal loss
+
+    def forward(self, loss_ent, loss_lit):
+        # Uncertainty-weighted total loss
+        total_loss = (
+            torch.exp(-self.log_sigma_ent) * loss_ent
+            + torch.exp(-self.log_sigma_lit) * loss_lit
+            + self.log_sigma_ent
+            + self.log_sigma_lit
+        )
         return total_loss

@@ -4,6 +4,8 @@ import torch.optim as optim
 from tqdm import tqdm
 
 from src.utils import UncertaintyWeightedLoss
+from src.model import LiteralEmbeddings
+from src.utils import UncertaintyWeightedLoss
 
 
 def train_literal_model(args, literal_dataset, kge_model, Literal_model=None):
@@ -106,6 +108,14 @@ def train_model(
 
         for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
             model.train()
+    criterion = UncertaintyWeightedLoss()
+    for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
+        ent_loss = 0
+        lit_loss = 0
+        model.train()
+
+        if args.combined_training:
+            Literal_model.to(device)
             Literal_model.train()
             ent_loss_total, lit_loss_total = 0.0, 0.0
 
