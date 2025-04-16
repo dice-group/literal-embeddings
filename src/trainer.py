@@ -102,6 +102,7 @@ def train_model(
             [
                 {"params": model.parameters(), "lr": args.lr},
                 {"params": Literal_model.parameters(), "lr": args.lit_lr},
+                {"params": criterion.parameters(), "lr": args.lr},
             ]
         )
 
@@ -165,7 +166,12 @@ def train_model(
 
     else:
         # ====== KGE-only training ======
-        optimizer = optim.Adam(model.parameters(), lr=args.lr)
+        optimizer = optim.Adam(
+            [
+                {"params": model.parameters(), "lr": args.lr},
+                {"params": criterion.parameters(), "lr": args.lr},
+            ]
+        )
 
         for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
             model.train()
@@ -177,6 +183,7 @@ def train_model(
 
                 yhat = model(train_X)
                 loss = bce_loss_fn(yhat, train_y)
+                loss = criterion(loss_ent=loss)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
