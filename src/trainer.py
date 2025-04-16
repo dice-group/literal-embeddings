@@ -90,7 +90,7 @@ def train_model(
     criterion = UncertaintyWeightedLoss()
 
     loss_log = {"ent_loss": []}
-    if args.log_validation:
+    if val_dataloader:
         loss_log["ent_loss_val"] = []
 
     if args.combined_training:
@@ -102,20 +102,11 @@ def train_model(
             [
                 {"params": model.parameters(), "lr": args.lr},
                 {"params": Literal_model.parameters(), "lr": args.lit_lr},
-                {"params": criterion.parameters(), "lr": args.lr},
             ]
         )
 
         for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
             model.train()
-    criterion = UncertaintyWeightedLoss()
-    for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
-        ent_loss = 0
-        lit_loss = 0
-        model.train()
-
-        if args.combined_training:
-            Literal_model.to(device)
             Literal_model.train()
             ent_loss_total, lit_loss_total = 0.0, 0.0
 
@@ -144,7 +135,6 @@ def train_model(
 
                 # Combined loss
                 total_loss = criterion(ent_loss, lit_loss)
-                # total_loss = ent_loss + lit_loss
                 total_loss.backward()
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -175,12 +165,7 @@ def train_model(
 
     else:
         # ====== KGE-only training ======
-        optimizer = optim.Adam(
-            [
-                {"params": model.parameters(), "lr": args.lr},
-                {"params": criterion.parameters(), "lr": args.lr},
-            ]
-        )
+        optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
         for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
             model.train()
@@ -192,7 +177,6 @@ def train_model(
 
                 yhat = model(train_X)
                 loss = bce_loss_fn(yhat, train_y)
-                loss = criterion(loss_ent=loss)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -204,7 +188,7 @@ def train_model(
             tqdm_bar.set_postfix_str(f"loss_epoch={avg_loss:.5f}")
 
             # Optional validation
-            if val_dataloader:
+            if args.log_validation:
                 model.eval()
                 val_loss = 0.0
                 with torch.no_grad():

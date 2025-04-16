@@ -5,9 +5,8 @@ from torch.utils.data import Dataset
 
 
 class LiteralDataset(Dataset):
-    def __init__(self, dataset_dir, ent_idx, split="train", normalization="z-norm"):
+    def __init__(self, dataset_dir, ent_idx, normalization="z-norm"):
         self.dataset_dir = os.path.join(dataset_dir, "literals")
-        self.split = split
         self.normalization = normalization
         self.normalization_params = {}
 
@@ -26,40 +25,31 @@ class LiteralDataset(Dataset):
         self._load_data()
 
     def _load_data(self):
-        file_path = self.file_paths[self.split]
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Data file not found at {file_path}")
-
-        df = pd.read_csv(
-            file_path, sep="\t", header=None, names=["head", "relation", "tail"]
+        # Load mapping from train
+        train_path = self.file_paths["train"]
+        if not os.path.exists(train_path):
+            raise FileNotFoundError(f"Data file not found at {train_path}")
+        train_df = pd.read_csv(
+            train_path, sep="\t", header=None, names=["head", "relation", "tail"]
         )
-        df = df[df["head"].isin(self.entity_to_idx)]
-
-        if self.split == "train":
-            self.data_property_to_idx = {
-                rel: idx for idx, rel in enumerate(df["relation"].unique())
-            }
-        else:
-            # Load mapping from train
-            train_path = self.file_paths["train"]
-            train_df = pd.read_csv(
-                train_path, sep="\t", header=None, names=["head", "relation", "tail"]
-            )
-            self.data_property_to_idx = {
-                rel: idx for idx, rel in enumerate(train_df["relation"].unique())
-            }
+        train_df = train_df[train_df["head"].isin(self.entity_to_idx)]
+        self.data_property_to_idx = {
+            rel: idx for idx, rel in enumerate(train_df["relation"].unique())
+        }
 
         self.num_data_properties = len(self.data_property_to_idx)
 
-        df["head_idx"] = df["head"].map(self.entity_to_idx)
-        df["rel_idx"] = df["relation"].map(self.data_property_to_idx)
-        df = self._apply_normalization(df)
+        train_df["head_idx"] = train_df["head"].map(self.entity_to_idx)
+        train_df["rel_idx"] = train_df["relation"].map(self.data_property_to_idx)
+        train_df = self._apply_normalization(train_df)
 
         self.triples = torch.tensor(
-            df[["head_idx", "rel_idx"]].values, dtype=torch.long
+            train_df[["head_idx", "rel_idx"]].values, dtype=torch.long
         )
-        self.tails = torch.tensor(df["tail"].values, dtype=torch.float32)
-        self.tails_norm = torch.tensor(df["tail_norm"].values, dtype=torch.float32)
+        self.tails = torch.tensor(train_df["tail"].values, dtype=torch.float32)
+        self.tails_norm = torch.tensor(
+            train_df["tail_norm"].values, dtype=torch.float32
+        )
 
     def _apply_normalization(self, df):
         if self.normalization == "z-norm":
