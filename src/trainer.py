@@ -131,11 +131,14 @@ def train_model(
                 )
 
                 ent_embeds = model.entity_embeddings(lit_entities)
-                yhat_lit = Literal_model(ent_embeds, lit_properties)
+                yhat_lit = Literal_model(
+                    ent_embeds, lit_properties, train_ent_embeds=True
+                )
                 lit_loss = F.l1_loss(yhat_lit, y_true)
 
                 # Combined loss
-                total_loss = criterion(ent_loss, lit_loss)
+                # total_loss = criterion(ent_loss, lit_loss)
+                total_loss = ent_loss + lit_loss
                 total_loss.backward()
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
