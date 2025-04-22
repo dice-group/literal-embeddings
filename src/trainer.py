@@ -96,7 +96,7 @@ def train_model(
         optimizer = optim.Adam(
             [
                 {"params": model.parameters(), "lr": args.lr},
-                {"params": Literal_model.parameters(), "lr": args.lit_lr}
+                {"params": Literal_model.parameters(), "lr": args.lit_lr},
             ]
         )
 
@@ -125,11 +125,13 @@ def train_model(
                 )
 
                 ent_embeds = model.entity_embeddings(lit_entities)
-                yhat_lit = Literal_model(ent_embeds, lit_properties, train_ent_embeds = True)
+                yhat_lit = Literal_model(
+                    ent_embeds, lit_properties, train_ent_embeds=True
+                )
                 lit_loss = F.l1_loss(yhat_lit, y_true)
 
                 # Combined loss
-                total_loss = ent_loss + (ent_loss.item() / (lit_loss.item() + 1e-6)) * lit_loss
+                total_loss = ent_loss + lit_loss
                 total_loss.backward()
 
                 optimizer.step()
