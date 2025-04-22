@@ -14,3 +14,4 @@ local_runner.py
 checkpoints/
 logs/*
 *.sh
+viz/*
