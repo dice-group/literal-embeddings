@@ -3,50 +3,62 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 
-from src.model import LiteralEmbeddings
-
 
 def train_literal_model(args, literal_dataset, kge_model, Literal_model=None):
     """
-    Method to train Literal Embedding model standalone when a Pre-trained model is provided
-    """
-    device = args.device
-    loss_log = {"lit_loss": []}
-    Literal_model = Literal_model.to(device)
+    Trains the Literal Embedding model standalone when a pre-trained KGE model is provided.
 
-    lit_entities = literal_dataset.train_data["triples"][:, 0].long()
-    lit_properties = literal_dataset.train_data["triples"][:, 1].long()
+    Parameters:
+    - args: Namespace with configuration values
+    - literal_dataset: Dataset with literal triples
+    - kge_model: Pretrained knowledge graph embedding model
+    - Literal_model: The literal embedding model to train
+
+    Returns:
+    - Literal_model: Trained literal model
+    - loss_log: Dictionary logging the literal training loss per epoch
+    """
+
+    device = args.device
+    Literal_model = Literal_model.to(device)
+    kge_model = kge_model.to(device)
+    kge_model.eval()  # Freeze KGE model
+
+    loss_log = {"lit_loss": []}
+    optimizer = optim.Adam(Literal_model.parameters(), lr=args.lit_lr)
+
+    # Prepare training data
+    triples = literal_dataset.triples
+    lit_entities = triples[:, 0].long().to(device)
+    lit_properties = triples[:, 1].long().to(device)
 
     if args.multi_regression:
-        # Create a zero tensor of shape [num_samples, num_relations]
-        num_samples = lit_entities.shape[0]  # Number of rows in dataset
-        y_true = torch.full(
-            (num_samples, literal_dataset.num_data_properties), 0, dtype=torch.float32
-        )  # Match dtype with `v`
-
-        # Assign tail values at the correct relation indices per row
-        y_true[torch.arange(num_samples), lit_properties] = literal_dataset.train_data[
-            "tails_norm"
-        ]  # Uses row index from torch
-
+        num_samples = lit_entities.size(0)
+        y_true = torch.zeros(
+            num_samples, literal_dataset.num_data_properties, device=device
+        )
+        y_true[torch.arange(num_samples), lit_properties] = (
+            literal_dataset.tails_norm.to(device)
+        )
     else:
-        y_true = literal_dataset.train_data["tails_norm"]
+        y_true = literal_dataset.tails_norm.to(device)
 
-    ent_ebds = kge_model.entity_embeddings(lit_entities)
-    ent_ebds, lit_properties, y_true = (
-        ent_ebds.to(device),
-        lit_properties.to(device),
-        y_true.to(device),
-    )
+    # Freeze gradients for KGE entity embeddings
+    with torch.no_grad():
+        ent_ebds = kge_model.entity_embeddings(lit_entities)
 
-    optimizer = optim.Adam(Literal_model.parameters(), lr=args.lit_lr)
+    # Can use a DataLoader for large datasets (currently assumes full-batch training)
     for epoch in (tqdm_bar := tqdm(range(args.lit_epochs))):
+        Literal_model.train()
+        optimizer.zero_grad()
+
         yhat = Literal_model(ent_ebds, lit_properties)
         lit_loss = F.l1_loss(yhat, y_true)
+
         lit_loss.backward()
         optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-        tqdm_bar.set_postfix_str(f" loss_lit={lit_loss:.5f} ")
+
+        tqdm_bar.set_postfix_str(f"loss_lit={lit_loss:.5f}")
         loss_log["lit_loss"].append(lit_loss.item())
 
     return Literal_model, loss_log
@@ -58,118 +70,133 @@ def train_model(
     args,
     literal_dataset=None,
     Literal_model=None,
+    val_dataloader=None,
 ):
     """
     Trains the model and logs the loss.
 
-    Parameters:
-    - model: (Any ) Knowledge Graph Embedding model instance
-    - train_dataloader: Dataloader for training data
-    - args: Configuration arguments
-    - literal_dataset: Literal dataset (optional)
-    - Literal_model: Literal model instance (optional)
-    - optimize_with_literal: Flag to optimize with literals
-
     Returns:
+    - model: Trained KGE model
+    - Literal_model: Trained literal model (if any)
     - loss_log: Dictionary of loss logs
     """
     device = args.device
     model.to(device)
+    bce_loss_fn = torch.nn.BCEWithLogitsLoss()
 
     loss_log = {"ent_loss": []}
-    y_true, lit_entities, lit_properties = None, None, None
+    if val_dataloader:
+        loss_log["ent_loss_val"] = []
 
-    bce_loss_fn = torch.nn.BCEWithLogitsLoss()
     if args.combined_training:
-
-        # intialize loss logs and optimizers for Literal and KGE odel
+        # ====== Combined training (KGE + Literal) ======
         loss_log["lit_loss"] = []
+        Literal_model.to(device)
+
         optimizer = optim.Adam(
             [
                 {"params": model.parameters(), "lr": args.lr},
-                {"params": Literal_model.parameters(), "lr": args.lit_lr},
-            ]
-        )
-    else:
-        # optimzer when only KGE model is being trained
-        optimizer = optim.Adam(
-            [
-                {"params": model.parameters(), "lr": args.lr},
+                {"params": Literal_model.parameters(), "lr": args.lit_lr}
             ]
         )
 
-    for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
-        ent_loss = 0
-        lit_loss = 0
-        model.train()
-
-        if args.combined_training:
-            Literal_model.to(device)
+        for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
+            model.train()
             Literal_model.train()
-            for batch in train_dataloader:
+            ent_loss_total, lit_loss_total = 0.0, 0.0
 
-                # begin entity emebedding model training
+            for batch in train_dataloader:
                 train_X, train_y = batch
                 train_X, train_y = train_X.to(device), train_y.to(device)
-                # ent_loss_batch = model.training_step(batch=(train_X, train_y))
+
+                # KGE model forward
                 yhat_e = model(train_X)
-                ent_loss_batch = bce_loss_fn(yhat_e, train_y)
+                ent_loss = bce_loss_fn(yhat_e, train_y)
 
-                # prepare batch for  literal embedding model training
-                # Build literal triples based on entity triples
-                # Extract data properties from entity triple (train_X)
-
-                batch_literal_entity_indices = train_X[:, 0].long().to("cpu")
-
-                # batch_literal_entity_indices = batch_literal_entity_indices.to(device)
-
+                # Literal model forward
+                entity_ids = train_X[:, 0].long().to("cpu")
                 lit_entities, lit_properties, y_true = literal_dataset.get_batch(
-                    batch_literal_entity_indices, multi_regression=args.multi_regression
+                    entity_ids, multi_regression=args.multi_regression
                 )
                 lit_entities, lit_properties, y_true = (
                     lit_entities.to(device),
                     lit_properties.to(device),
                     y_true.to(device),
                 )
-                ent_ebds = model.entity_embeddings(lit_entities)
-                yhat = Literal_model.forward(ent_ebds, lit_properties)
-                lit_loss_batch = F.l1_loss(yhat, y_true)
 
-                # begin combined loss procedure
-                w1, w2 = args.alpha, args.beta
-                batch_loss = (w1 * ent_loss_batch) + (w2 * lit_loss_batch)
+                ent_embeds = model.entity_embeddings(lit_entities)
+                yhat_lit = Literal_model(ent_embeds, lit_properties, train_ent_embeds = True)
+                lit_loss = F.l1_loss(yhat_lit, y_true)
 
-                # backward loss and optimization step
-                batch_loss.backward()
+                # Combined loss
+                total_loss = ent_loss + (ent_loss.item() / (lit_loss.item() + 1e-6)) * lit_loss
+                total_loss.backward()
+
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
-                ent_loss += ent_loss_batch
-                lit_loss += lit_loss_batch
 
-            avg_epoch_loss_ent = ent_loss / len(train_dataloader)
-            avg_epoch_loss_lit = lit_loss / len(train_dataloader)
+                ent_loss_total += ent_loss.item()
+                lit_loss_total += lit_loss.item()
+
+            avg_ent_loss = ent_loss_total / len(train_dataloader)
+            avg_lit_loss = lit_loss_total / len(train_dataloader)
+
+            loss_log["ent_loss"].append(avg_ent_loss)
+            loss_log["lit_loss"].append(avg_lit_loss)
             tqdm_bar.set_postfix_str(
-                f" Avg. loss_ent={avg_epoch_loss_ent:.5f} , loss_lit={avg_epoch_loss_lit:.5f} "
+                f"Avg. ent_loss={avg_ent_loss:.5f}, lit_loss={avg_lit_loss:.5f}"
             )
 
-            loss_log["ent_loss"].append(avg_epoch_loss_ent.item())
-            loss_log["lit_loss"].append(avg_epoch_loss_lit.item())
+            # Optional: compute validation loss for KGE only
+            if args.log_validation:
+                model.eval()
+                val_loss = 0.0
+                with torch.no_grad():
+                    for val_X, val_y in val_dataloader:
+                        val_X, val_y = val_X.to(device), val_y.to(device)
+                        yhat_val = model(val_X)
+                        val_loss += bce_loss_fn(yhat_val, val_y).item()
+                avg_val_loss = val_loss / len(val_dataloader)
+                loss_log["ent_loss_val"].append(avg_val_loss)
 
-        else:
-            # trainning step only for KGE model ( without Literal Model)
+    else:
+        # ====== KGE-only training ======
+        optimizer = optim.Adam(
+            [
+                {"params": model.parameters(), "lr": args.lr},
+            ]
+        )
+
+        for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
+            model.train()
+            total_loss = 0.0
+
             for batch in train_dataloader:
                 train_X, train_y = batch
                 train_X, train_y = train_X.to(device), train_y.to(device)
-                yhat_e = model(train_X)
-                ent_loss_batch = bce_loss_fn(yhat_e, train_y)
-                ent_loss += ent_loss_batch
-                ent_loss_batch.backward()
+
+                yhat = model(train_X)
+                loss = bce_loss_fn(yhat, train_y)
+                loss.backward()
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
 
-            avg_epoch_loss = ent_loss / len(train_dataloader)
-            tqdm_bar.set_postfix_str(f" loss_epoch={avg_epoch_loss:.5f}")
+                total_loss += loss.item()
 
-            loss_log["ent_loss"].append(avg_epoch_loss.item())
+            avg_loss = total_loss / len(train_dataloader)
+            loss_log["ent_loss"].append(avg_loss)
+            tqdm_bar.set_postfix_str(f"loss_epoch={avg_loss:.5f}")
+
+            # Optional validation
+            if args.log_validation:
+                model.eval()
+                val_loss = 0.0
+                with torch.no_grad():
+                    for val_X, val_y in val_dataloader:
+                        val_X, val_y = val_X.to(device), val_y.to(device)
+                        yhat_val = model(val_X)
+                        val_loss += bce_loss_fn(yhat_val, val_y).item()
+                avg_val_loss = val_loss / len(val_dataloader)
+                loss_log["ent_loss_val"].append(avg_val_loss)
 
     return model, Literal_model, loss_log

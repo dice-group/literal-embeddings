@@ -14,3 +14,5 @@ local_runner.py
 checkpoints/
 logs/*
 *.sh
+viz/*
+src/grad_norm.py

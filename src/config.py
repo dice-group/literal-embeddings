@@ -349,5 +349,11 @@ def get_default_arguments():
         default=1,
         help="Number of runs for Literal Embedding Model",
     )
+    parser.add_argument(
+        "--log_validation",
+        action="store_true",
+        default=False,
+        help="Log the validation loss of the training process",
+    )
 
     return parser.parse_args()
