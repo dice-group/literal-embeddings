@@ -2,8 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
-import math
-from src.utils import LossCombiner
+
 
 def train_literal_model(args, literal_dataset, kge_model, Literal_model=None):
     """
@@ -84,7 +83,6 @@ def train_model(
     device = args.device
     model.to(device)
     bce_loss_fn = torch.nn.BCEWithLogitsLoss()
-   
 
     loss_log = {"ent_loss": []}
     if val_dataloader:
@@ -93,14 +91,12 @@ def train_model(
     if args.combined_training:
         # ====== Combined training (KGE + Literal) ======
         loss_log["lit_loss"] = []
-        #loss_log["lit_scale"] = []
         Literal_model.to(device)
 
         optimizer = optim.Adam(
             [
                 {"params": model.parameters(), "lr": args.lr},
                 {"params": Literal_model.parameters(), "lr": args.lit_lr},
-
             ]
         )
 
@@ -134,9 +130,8 @@ def train_model(
                 )
                 lit_loss = F.l1_loss(yhat_lit, y_true)
 
-                #scale  = (ent_loss / torch.log1p(lit_loss + ent_loss ))
-
-                total_loss = ent_loss  +    lit_loss
+                # Combined loss
+                total_loss = ent_loss + lit_loss
                 total_loss.backward()
 
                 optimizer.step()
@@ -150,7 +145,6 @@ def train_model(
 
             loss_log["ent_loss"].append(avg_ent_loss)
             loss_log["lit_loss"].append(avg_lit_loss)
-            #loss_log["lit_scale"].append(scale.item())
             tqdm_bar.set_postfix_str(
                 f"Avg. ent_loss={avg_ent_loss:.5f}, lit_loss={avg_lit_loss:.5f}"
             )
