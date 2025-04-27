@@ -10,7 +10,7 @@ try*.*
 Extras/*
 Experiments_Literals/
 Test_runs/
-local_runner.py
+local_runner*.py
 checkpoints/
 logs/*
 *.sh
