@@ -9,6 +9,7 @@ from dicee.knowledge_graph_embeddings import KGE
 from dicee.static_funcs import intialize_model
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 def denormalize(row, normalization_params, norm_type="z-norm"):
@@ -117,7 +118,7 @@ def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
         entity_to_idx = kge_obj.entity_to_idx
         relation_to_idx = kge_obj.relation_to_idx
     except Exception as e:
-        print("Cannot load as dicee KGE model.", str(e), "Trying manual load.")
+        # print("Cannot load as dicee KGE model.", str(e), "Trying manual load.")
         try:
             config_path = os.path.join(kge_path, "configuration.json")
             model_path = os.path.join(kge_path, "model.pt")
@@ -166,37 +167,15 @@ def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
     return kge_model, config, entity_to_idx, relation_to_idx
 
 
-class UncertaintyWeightedLoss(nn.Module):
-    def __init__(self):
+
+class LossCombiner(nn.Module):
+    def __init__(self, hidden_dim=8):
         super().__init__()
-        # Learnable log variances (log σ²) for numerical stability and positivity
-        self.log_sigma_ent = nn.Parameter(torch.tensor(0.0))  # for entity loss
-        self.log_sigma_lit = nn.Parameter(torch.tensor(0.0))  # for literal loss
+        self.net = nn.Sequential(
+            nn.Linear(2, 1)  # Directly maps 2 input features to 1 output
+        )
 
-    def forward(self, loss_ent, loss_lit=None):
-        """
-        Uncertainty-weighted total loss.
-        - If `loss_lit` is provided, it computes the combined loss using both entity and literal losses.
-        - If `loss_lit` is None, it only computes the weighted entity loss.
-
-        Parameters:
-        - loss_ent: Entity loss (required)
-        - loss_lit: Literal loss (optional, defaults to None)
-
-        Returns:
-        - total_loss: The weighted sum of the losses
-        """
-
-        if loss_lit is not None:
-            # Both entity and literal losses are present
-            total_loss = (
-                torch.exp(-self.log_sigma_ent) * loss_ent
-                + torch.exp(-self.log_sigma_lit) * loss_lit
-                + self.log_sigma_ent
-                + self.log_sigma_lit
-            )
-        else:
-            # Only entity loss is present, apply uncertainty weighting only to entity loss
-            total_loss = torch.exp(-self.log_sigma_ent) * loss_ent + self.log_sigma_ent
-
-        return total_loss
+    def forward(self, l1, l2):
+        x = torch.stack([l1, l2], dim=-1)  
+        combined = self.net(x).squeeze(-1)
+        return F.softplus(combined)

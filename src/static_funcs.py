@@ -1,5 +1,6 @@
 import json
 import os
+import csv
 
 import pandas as pd
 
@@ -7,6 +8,13 @@ from src.model import LiteralEmbeddings
 from src.trainer import train_literal_model
 from src.utils import evaluate_lit_preds
 
+
+def extract_metrics(data, split_name):
+        metrics = data.get(split_name, {})
+        return [
+            metrics.get("MRR", ""), metrics.get("H@1", ""), 
+            metrics.get("H@3", ""), metrics.get("H@10", "")
+        ]
 
 def save_literal_experiments(args=None, results_df=None, loss_df=None):
     if args is None:
@@ -125,3 +133,43 @@ def train_literal_n_runs(args, kge_model, literal_dataset):
                 final_results_df, df_results, on="relation", how="left"
             )
     return final_loss_df, final_results_df
+
+def log_exp(file_path : str= None, args = None):
+    if file_path is None:
+        file_path = "Experiments/exp_log.csv"
+    if args is None:
+        print("No args to log. Abort")
+        return
+    report_path = f'{args.full_storage_path}/eval_report.json'
+                 # Load combined evaluation data
+    with open(report_path, 'r') as file:
+        report = json.load(file)
+    dataset = str(args.dataset_dir).split('/')[-1]
+    row_dict = {
+        "Model": args.model,
+        "Dataset": dataset,
+        "lr": args.lr,
+        "Embedding_dim": args.embedding_dim,
+        "Epochs" : args.num_epochs,
+        "p": args.p,
+        "q": args.q,
+        "r": args.r,
+    }
+    metric_names = ["MRR", "H@1", "H@3", "H@10"]
+    splits = ["Train", "Test", "Val"]
+
+    for split in splits:
+        metrics = extract_metrics(report, split)  # Assuming this returns a list in [MRR, H@1, H@3, H@10]
+        for metric_name, value in zip(metric_names, metrics):
+            row_dict[f"{split}_{metric_name}"] = value
+    
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"CSV file not found: {file_path}")
+
+    # Append the new row
+    with open(file_path, mode='a', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=row_dict.keys())
+        writer.writerow(row_dict)
+    
+    print("Experiments Logged to the file")
+    
