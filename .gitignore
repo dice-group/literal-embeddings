@@ -1,5 +1,5 @@
 *.pyc
-Experiments/*
+Experiments*/*
 *.ipynb
 KGs/*
 MrAP/data/*

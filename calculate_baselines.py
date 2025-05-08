@@ -19,8 +19,10 @@ def evaluate_LOCAL_GLOBAL(df_entity_triples, df_train, df_test):
         A DataFrame containing Mean Absolute Error (MAE) and Root Mean Sqaured Error (RMSE)
         for 'LOCAL' and 'GLOBAL' predictions per relation.
     """
+    #df_train = df_train.drop_duplicates()
+
     # Precompute property lookup and global averages
-    property_dict = df_train.pivot(index="head", columns="relation", values="tail")
+    property_dict = df_train.pivot_table(index="head", columns="relation", values="tail", aggfunc='first')
     global_averages = df_train.groupby("relation")["tail"].mean()
 
     # Precompute neighbor dictionary
@@ -71,80 +73,41 @@ def evaluate_LOCAL_GLOBAL(df_entity_triples, df_train, df_test):
     return mae_per_relation
 
 
-import argparse
+def calculate_baselines(dataset_name =None):
+    dataset_path = f'KGs/{dataset_name}'
+    df_triples = pd.read_csv(
+            f"{dataset_path}/{dataset_name}_EntityTriples.txt",
+            sep="\t",
+            header=None,
+            names=["head", "relation", "tail"],
+        )
+    df_lits_train = pd.read_csv(
+        f"{dataset_path}/literals/train.txt",
+        sep="\t",
+        header=None,
+        names=["head", "relation", "tail"],
+    )
+    df_lits_test = pd.read_csv(
+        f"{dataset_path}/literals/test.txt",
+        sep="\t",
+        header=None,
+        names=["head", "relation", "tail"],
+    )
+    global_local_df = evaluate_LOCAL_GLOBAL(
+            df_entity_triples=df_triples,
+            df_train=df_lits_train,
+            df_test=df_lits_test,
+        )
+    global_local_df.to_csv(f"Stats/{dataset_name}_LOCAL_GLOBAL.csv")
+
+
 
 
 def main():
-    # Set up argument parser
-    parser = argparse.ArgumentParser(
-        description="Check if the provided name is  for a valid KG."
-    )
-    parser.add_argument(
-        "--kg",
-        type=str,
-        help="Name of the dataset with literal files.",
-        default="FB15k-237",
-    )
-
-    # Parse the arguments
-    args = parser.parse_args()
-
-    if args.kg == "FB15k-237":
-        df_triples = pd.read_csv(
-            "KGs/FB15k-237-lit/FB15K-237_EntityTriples.txt",
-            sep="\t",
-            header=None,
-            names=["head", "relation", "tail"],
-        )
-        df_lits_train = pd.read_csv(
-            "KGs/FB15k-237-lit/train.txt",
-            sep="\t",
-            header=None,
-            names=["head", "relation", "tail"],
-        )
-        df_lits_test = pd.read_csv(
-            "KGs/FB15k-237-lit/test.txt",
-            sep="\t",
-            header=None,
-            names=["head", "relation", "tail"],
-        )
-        global_local_df = evaluate_LOCAL_GLOBAL(
-            df_entity_triples=df_triples,
-            df_train=df_lits_train,
-            df_test=df_lits_test,
-        )
-        global_local_df.to_csv("Stats/FB15k-237-lit_LOCAL_GLOBAL.csv")
-    elif args.kg == "YAGO10-plus":
-        df_triples = pd.read_csv(
-            "KGs/YAGO10-plus/entity_triples.txt",
-            sep="\t",
-            header=None,
-            names=["head", "relation", "tail"],
-        )
-        df_lits_train = pd.read_csv(
-            "KGs/YAGO10-plus/train.txt",
-            sep="\t",
-            header=None,
-            names=["head", "relation", "tail"],
-        )
-        df_lits_test = pd.read_csv(
-            "KGs/YAGO10-plus/test.txt",
-            sep="\t",
-            header=None,
-            names=["head", "relation", "tail"],
-        )
-        global_local_df = evaluate_LOCAL_GLOBAL(
-            df_entity_triples=df_triples,
-            df_train=df_lits_train,
-            df_test=df_lits_test,
-        )
-        global_local_df.to_csv("Stats/YAGO10-plus_LOCAL_GLOBAL.csv")
-    else:
-        print(
-            f"The name '{args.kg}' is not valid. Please use 'FB15k-237' or 'YAGO10-plus'."
-        )
-        exit()
-
+    dataset_names = ["FB15k-237", "DB15K", "YAGO15k", "mutagenesis"]
+    for dataset_name in dataset_names:
+        calculate_baselines(dataset_name=dataset_name)
+        print(f"Baseline calculation completed for{dataset_name}")
 
 if __name__ == "__main__":
     main()

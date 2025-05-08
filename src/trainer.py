@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
-
+import json
 
 def train_literal_model(args, literal_dataset, kge_model, Literal_model=None):
     """
@@ -21,7 +21,7 @@ def train_literal_model(args, literal_dataset, kge_model, Literal_model=None):
 
     device = args.device
     Literal_model = Literal_model.to(device)
-    kge_model = kge_model.to(device)
+    #kge_model = kge_model.to(device)
     kge_model.eval()  # Freeze KGE model
 
     loss_log = {"lit_loss": []}
@@ -29,23 +29,25 @@ def train_literal_model(args, literal_dataset, kge_model, Literal_model=None):
 
     # Prepare training data
     triples = literal_dataset.triples
-    lit_entities = triples[:, 0].long().to(device)
-    lit_properties = triples[:, 1].long().to(device)
+    lit_entities = triples[:, 0].long()
+    lit_properties = triples[:, 1].long()
 
     if args.multi_regression:
         num_samples = lit_entities.size(0)
         y_true = torch.zeros(
-            num_samples, literal_dataset.num_data_properties, device=device
+            num_samples, literal_dataset.num_data_properties
         )
         y_true[torch.arange(num_samples), lit_properties] = (
-            literal_dataset.tails_norm.to(device)
+            literal_dataset.tails_norm
         )
     else:
-        y_true = literal_dataset.tails_norm.to(device)
+        y_true = literal_dataset.tails_norm
 
     # Freeze gradients for KGE entity embeddings
     with torch.no_grad():
         ent_ebds = kge_model.entity_embeddings(lit_entities)
+
+    ent_ebds, lit_properties, y_true = ent_ebds.to(device), lit_properties.to(device), y_true.to(device)
 
     # Can use a DataLoader for large datasets (currently assumes full-batch training)
     for epoch in (tqdm_bar := tqdm(range(args.lit_epochs))):
@@ -87,7 +89,6 @@ def train_model(
     loss_log = {"ent_loss": []}
     if val_dataloader:
         loss_log["ent_loss_val"] = []
-
     if args.combined_training:
         # ====== Combined training (KGE + Literal) ======
         loss_log["lit_loss"] = []
@@ -131,7 +132,10 @@ def train_model(
                 lit_loss = F.l1_loss(yhat_lit, y_true)
 
                 # Combined loss
-                total_loss = ent_loss + lit_loss
+                scale = torch.log1p(  
+                    2* ((ent_loss * lit_loss) / (ent_loss + lit_loss))
+                ).detach()
+                total_loss = (1-scale)* ent_loss + scale * lit_loss
                 total_loss.backward()
 
                 optimizer.step()
@@ -139,6 +143,7 @@ def train_model(
 
                 ent_loss_total += ent_loss.item()
                 lit_loss_total += lit_loss.item()
+            
 
             avg_ent_loss = ent_loss_total / len(train_dataloader)
             avg_lit_loss = lit_loss_total / len(train_dataloader)

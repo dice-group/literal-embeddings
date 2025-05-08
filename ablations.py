@@ -66,8 +66,9 @@ def calculate_abalation_scores(exp_path: str):
 
 
 def evaluate_ablations(return_df=False):
-    original_path = "Experiments/new_ablations/Synthetic_0.05_combined"
-    random_path = "Experiments/new_ablations/Synthetic_random_0.05_combined"
+    
+    original_path = "Experiments/Ablations/Synthetic_combined"
+    random_path = "Experiments/Ablations/Synthetic_random_combined"
     # Step 1: Loop through all folders under actual and random paths
     original_scores = {}
     for folder in os.listdir(original_path):

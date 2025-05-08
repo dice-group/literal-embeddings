@@ -1,0 +1,12 @@
+relation,KGA_MAE,NAP++_MAE,MrAP_MAE
+people.person.date_of_birth,18.9,22.1,15.0
+people.deceased_person.date_of_death,20.6,52.3,16.3
+film.film.initial_release_date,4.0,9.9,6.3
+organization.organization.date_founded,49.0,59.3,58.3
+location.dated_location.date_founded,76.0,92.1,98.8
+location.geocode.latitude,2.1,11.8,1.5
+location.geocode.longitude,7.1,54.7,4.0
+location.location.area,61000.0,440000.0,440000.0
+topic_server.population_number,4000000.0,7500000.0,21000000.0
+people.person.height_meters,0.077,0.08,0.086
+people.person.weight_kg,11.6,15.3,12.9

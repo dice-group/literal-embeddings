@@ -5,10 +5,11 @@ from torch.utils.data import Dataset
 
 
 class LiteralDataset(Dataset):
-    def __init__(self, dataset_dir, ent_idx, normalization="z-norm"):
+    def __init__(self, dataset_dir, ent_idx, normalization="z-norm", sampling_ratio = None):
         self.dataset_dir = os.path.join(dataset_dir, "literals")
         self.normalization = normalization
         self.normalization_params = {}
+        self.sampling_ratio = sampling_ratio 
 
         self.file_paths = {
             s: os.path.join(self.dataset_dir, f"{s}.txt")
@@ -36,6 +37,21 @@ class LiteralDataset(Dataset):
         self.data_property_to_idx = {
             rel: idx for idx, rel in enumerate(train_df["relation"].unique())
         }
+
+        # reduce the train set for ablations using sampling ratio
+        # keeps the sampling_ratio * 100 % of full training set in the train_df
+
+        if self.sampling_ratio is not None:
+            if not (0 < self.sampling_ratio <= 1):
+                raise ValueError("Fraction must be between 0 and 1.")
+
+            train_df = (
+                train_df.groupby("relation", group_keys=False)
+                .apply(lambda x: x.sample(frac=self.sampling_ratio, random_state=42))
+                .reset_index(drop=True)
+            )
+            print(f"Training Literal Embedding model with {self.sampling_ratio*100:.1f}% of the train set.")
+
 
         self.num_data_properties = len(self.data_property_to_idx)
 
@@ -99,8 +115,9 @@ class LiteralDataset(Dataset):
 
         return df
 
-    def get_batch(self, entity_indices: torch.Tensor, multi_regression=True):
-        # Used when we still want to use KGE entity indices externally
+    def get_batch(
+        self, entity_indices: torch.Tensor, multi_regression=False
+    ):
         indices = torch.where(torch.isin(self.triples[:, 0], entity_indices))[0]
         ent_ids = self.triples[indices, 0]
         rel_ids = self.triples[indices, 1]
@@ -113,6 +130,7 @@ class LiteralDataset(Dataset):
             y_true[torch.arange(len(ent_ids)), rel_ids] = labels
         else:
             y_true = labels
+
         return ent_ids, rel_ids, y_true
 
     def get_ea_encoding(self):

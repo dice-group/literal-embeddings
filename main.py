@@ -62,6 +62,8 @@ def main(args):
         valid_dataloader = DataLoader(
             valid_dataset, batch_size=args.batch_size, shuffle=True
         )
+    else:
+        valid_dataloader = None
 
     # initialize KGE model using dicee framework model initialization
     kge_model, _ = intialize_model(vars(args), 0)
@@ -93,6 +95,7 @@ def main(args):
     )
 
     # Evaluating the KGE model on Link Prediction task MRR, H@1,3,10
+    
     evaluator = Evaluator(args=args)
     kge_model.to("cpu")
     evaluator.eval(
@@ -101,9 +104,9 @@ def main(args):
         form_of_labelling="EntityPrediction",
     )
 
-    # can be used to skip literal eval if all literal data is used as train
-    # can be used also if no test/val split avilable
-    # use args.eval_literals = Flase to skip this step
+        # can be used to skip literal eval if all literal data is used as train
+        # can be used also if no test/val split avilable
+        # use args.eval_literals = Flase to skip this step
     if args.combined_training and args.eval_literals:
         lit_results = evaluate_lit_preds(
             literal_dataset,
@@ -136,7 +139,7 @@ def train_with_kge(args):
     kge_model, configs, e2idx, _ = load_model_components(args.pretrained_kge_path)
     args.embedding_dim = kge_model.embedding_dim
     args.model = kge_model.name
-    args.dataset_dir = configs["dataset_dir"]
+    #args.dataset_dir = configs["dataset_dir"]
     dataset_name = os.path.basename(args.dataset_dir)
 
     print(

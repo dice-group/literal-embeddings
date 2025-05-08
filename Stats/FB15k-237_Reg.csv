@@ -1,0 +1,12 @@
+relation,LR_MAE,LR_RMSE,PLM_reg:MAE,PLM_reg:RMSE
+location.location.area,770000,1000000,1778305.8914,2173280.8154
+location.geocode.latitude,8.47,12.44,8.7413,12.2494
+people.person.date_of_birth,26.6,116.58,23.489,30.1052
+topic_server.population_number,7900000,17000000,25998727.3668,81801314.4006
+people.person.height_meters,0.065,0.083,0.162,0.2377
+film.film.initial_release_date,5.59,7.68,5.526,7.7708
+location.geocode.longitude,25.56,34.69,24.959,34.7475
+organization.organization.date_founded,53.85,90.11,71.6319,116.5818
+people.deceased_person.date_of_death,35.89,56.84,45.5746,61.2318
+location.dated_location.date_founded,145.46,227.09,153.3872,285.5946
+people.person.weight_kg,N/A,N/A,9.5146,11.183

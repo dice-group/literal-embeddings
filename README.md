@@ -42,7 +42,8 @@ This should support KGE model trained with this framework as well as from dice-e
 
  The literal dataset should be present inside the Literal folder of the respective KGs dataset for the link prediction task. e.g, `KGs/Family/literals` should contain numeric triples for Family dataset.
 
-Important: Use the `--pretrained_kge_path` to provide the path for the pre-trained KGE model with configurations and model weights. The Literal Embedding model takes the Knowledge Graph  and Embedding dim from the pre-trained KGE configs.
+Important: Use the `--pretrained_kge_path` to provide the path for the pre-trained KGE model with configurations and model weights. 
+Provide the dataset dir using `--dataset_dir` argument. Keep the literal dataset within the dataset dir inside a folder named "literals"
 
 ```bash
 python main.py --dataset_dir KGs/Family --lit_lr 0.05 --literal_training --pretrained_kge_path "Experiments/test_dir" --lit_epochs 200
