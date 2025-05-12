@@ -355,5 +355,10 @@ def get_default_arguments():
         default=False,
         help="Log the validation loss of the training process",
     )
-
+    parser.add_argument(
+        "--lit_sampling_ratio",
+        type=float,
+        default=None,
+        help="Use to evaluate Literal Embedding model with decreased training ratio",
+    )
     return parser.parse_args()

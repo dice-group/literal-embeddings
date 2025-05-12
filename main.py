@@ -149,11 +149,11 @@ def train_with_kge(args):
 
     if not args.full_storage_path:
         args.full_storage_path = (
-            f"Experiments_Literals/{dataset_name}_{args.embedding_dim}/{args.model}"
+            f"Experiments/Literals/{dataset_name}/{args.model}_{args.embedding_dim}"
         )
 
     literal_dataset = LiteralDataset(
-        dataset_dir=args.dataset_dir, ent_idx=e2idx, normalization=args.lit_norm
+        dataset_dir=args.dataset_dir, ent_idx=e2idx, normalization=args.lit_norm, sampling_ratio=args.lit_sampling_ratio
     )
     if args.num_literal_runs > 1:
         lit_loss, lit_results = train_literal_n_runs(

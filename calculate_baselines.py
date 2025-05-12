@@ -25,19 +25,29 @@ def evaluate_LOCAL_GLOBAL(df_entity_triples, df_train, df_test):
     property_dict = df_train.pivot_table(index="head", columns="relation", values="tail", aggfunc='first')
     global_averages = df_train.groupby("relation")["tail"].mean()
 
-    # Precompute neighbor dictionary
-    neighbor_dict = df_entity_triples.groupby("head")["tail"].apply(list).to_dict()
+    # Incoming neighbor dictionary
+    incoming_neighbor_dict = df_train.groupby("tail")["head"].apply(list).to_dict()
+
+    # Outgoing neighbor dictionary
+    outgoing_neighbor_dict = df_train.groupby("head")["tail"].apply(list).to_dict()
+
+    # Merge dictionaries and combine values as sets
+    merged_neighbor_dict = {}
+    for key, value in incoming_neighbor_dict.items():
+        merged_neighbor_dict.setdefault(key, set()).update(value)
+    for key, value in outgoing_neighbor_dict.items():
+        merged_neighbor_dict.setdefault(key, set()).update(value)
 
     def calculate_local_value(row):
         node = row["head"]
         relation = row["relation"]
 
         # If node is not in neighbor_dict, return the global average for the relation
-        if node not in neighbor_dict:
+        if node not in merged_neighbor_dict:
             return global_averages.get(relation, float("nan"))
 
         # Retrieve neighbor nodes
-        neighbor_nodes = neighbor_dict[node]
+        neighbor_nodes = merged_neighbor_dict[node]
 
         # Retrieve neighbor values for the relation
         if relation in property_dict.columns:
