@@ -162,7 +162,7 @@ def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
             print(
                 "Building the KGE model failed, check pre-trained KGE directory", str(e)
             )
-            exit(0)
+            return None
         print("Manual KGE load Successfull!!")
     return kge_model, config, entity_to_idx, relation_to_idx
 

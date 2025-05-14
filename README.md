@@ -1,5 +1,8 @@
 # literal-embeddings
-Neural Regression with Embeddings for Numeric Attribute ( Literals ) Prediction in Knowledge Graphs
+Official Reposiotry for the paper: Neural Regression with Embeddings for Numeric Attribute ( Literals ) Prediction in Knowledge Graphs
+
+### Supplementry Materials for the paper 
+The file `Appendix_Neural_Regression.pdf` contains all the Appendix contents for the paper.
 
 ## Installation and Requirements
 
@@ -75,3 +78,62 @@ If you want to save the experiment on a desired path, provide the path in the CL
 python main.py  --model Keci --dataset_dir KGs/Family --lr 0.05 --embedding_dim 128 --num_epochs 256 --save_experiment --full_storage_path "Experiments/test_dir"
 ```
 You can then provide such experiment path to train the Literal embedding Model.
+
+## Recreating the results from the paper
+
+### 1. Train the embedding model for LitEm
+We use the TransE embedding at d=100, for 256 epochs as the base results with all the triples. To recreate the models, firsh make the scripts runnable and run the script:
+
+```bash
+chmod +x scripts/* 
+```
+```bash
+./scripts/runner_kge_litem.sh
+```
+This will train the TransE Embeddings for all the datasets used in experiments for 256 epochs , d = 100, using KvsAll Scoring Technique
+
+### 2. Recreate the litEm results
+```bash
+./scripts/runner_litem.sh
+```
+This will reproduce the results for the LitEm model presented for Numerical Attribute Predictions for all datasets.
+
+### 3. Training the Link Prediction task
+```bash
+./scripts/runner_link_prediction.sh
+```
+This will train all the models for Link Prediction task with and without combined training of the LitEm model
+
+### 5. Ablations on reduced 
+```bash
+./scripts/runner_litem_ablation_reduced.sh
+```
+This will run the ablation for LitEM model at different sparsity of KGs as mentioned in the paper
+
+### 6. Ablations
+```bash
+./scripts/runner_litem_ablation.sh
+```
+To check the ablation of "Literal Awareness" on Synthetic and Synthetic Random datasets, run the script. After this calculate the ablation scores using:
+```python
+python ablations.py
+```
+### 7. LitEm experiments on All KGE models and Dataset
+To check the Literal Prediction perfromance of the KGE models, run the command:
+```bash
+./scripts/runner_kge_litpred.sh
+```
+
+### 8. Calculate baselines
+To calcuate LOCAL and GLOBAL baselines for the knowledge graphs, run the python command:
+```python
+python calcuate_baselines.py
+```
+If you download the pre-trained models, you can direclly unzip the contents at Experiments/ and use the notebook tables_paper.ipynb to create the pandas table and also in latex format for the tables present in the paper as well as supplementary materials.
+
+The link for the Experiments:
+
+These scripts are to recreate the experiment results, feel free to try other features of of Literal Embedding framework.
+
+### Extention for other KGs
+If you want to extend this to new KGs, create a new folder under KGs/ . Keep all the splits `train.txt`, `test.txt` and `valid.txt`. Create a file containing all the triples at `{dataset_name}_EntityTriples.txt`. For the Literals, keep the literal data inside the `literals` dir inside the dataset folder `KGs/{dataset_name}/literals`. Provide also `train.txt`, `test.txt`, `valid.txt` within the literals folder. Keep all the KGs in triples format with tab sepration. Following this, you can use our approach with any KGs for literal prediction and Augmentation.   

@@ -67,8 +67,8 @@ def calculate_abalation_scores(exp_path: str):
 
 def evaluate_ablations(return_df=False):
     
-    original_path = "Experiments/Ablations/Synthetic_combined"
-    random_path = "Experiments/Ablations/Synthetic_random_combined"
+    original_path = "Experiments/Ablations/Synthetic"
+    random_path = "Experiments/Ablations/Synthetic_random"
     # Step 1: Loop through all folders under actual and random paths
     original_scores = {}
     for folder in os.listdir(original_path):
@@ -102,10 +102,10 @@ def evaluate_ablations(return_df=False):
 
     # Optional: sort by accuracy or model name
     df = df.sort_values(by="model").reset_index(drop=True)
-    storage_path = "Experiments/Ablations"
+    storage_path = "Stats"
     os.makedirs(storage_path, exist_ok=True)
 
-    df.to_csv(f'{storage_path}/scores.csv', sep="\t", index=False)
+    df.to_csv(f'{storage_path}/ablation_scores.csv', sep="\t", index=False)
     print(df)
     return df if return_df else None
 

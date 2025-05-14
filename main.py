@@ -26,11 +26,20 @@ from src.utils import evaluate_lit_preds, load_model_components
 def main(args):
     # Save Experiment Results
     if args.full_storage_path is None:
-        exp_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
-        exp_path_name = f"Test_runs/{exp_date_time}"
+        if args.test_runs:
+            exp_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
+            exp_path_name = f"Test_runs/{exp_date_time}"
+            
+        else:
+            dataset_name = os.path.basename(args.dataset_dir)
+            if args.combined_training:
+                    exp_path_name = f"Experiments/KGE_Combined/{dataset_name}_combined/{args.model}"
+            else:
+                exp_path_name = f"Experiments/KGE/{dataset_name}/{args.model}"
+                
         args.full_storage_path = exp_path_name
     os.makedirs(args.full_storage_path, exist_ok=True)
-
+    print("Training dir ", args.full_storage_path)
     # Device setup
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(args.random_seed)
@@ -52,6 +61,10 @@ def main(args):
     train_dataloader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True
     )
+
+    if args.train_all_triples:
+        args.log_validation = False
+
     if args.log_validation:
         valid_dataset = KvsAll(
             train_set_idx=entity_dataset.valid_set,
@@ -106,8 +119,10 @@ def main(args):
 
         # can be used to skip literal eval if all literal data is used as train
         # can be used also if no test/val split avilable
-        # use args.eval_literals = Flase to skip this step
-    if args.combined_training and args.eval_literals:
+        # use args.skip_eval_literals  to skip this step
+
+        
+    if args.combined_training and not args.skip_eval_literals:
         lit_results = evaluate_lit_preds(
             literal_dataset,
             dataset_type="test",
@@ -126,6 +141,9 @@ def main(args):
             save_embeddings_as_csv=args.save_embeddings_as_csv,
         )
         save_kge_experiments(args=args, loss_log=loss_log, lit_results=lit_results)
+        print(
+                f"Experiment for {args.model} + {args.embedding_dim} (combined={args.combined_training}) completed and stored at {args.full_storage_path}"
+            )
 
 
 def train_with_kge(args):
@@ -136,7 +154,15 @@ def train_with_kge(args):
     torch.cuda.manual_seed_all(args.random_seed)
 
     # load KGE model as dicee KGE object or local KGE object
-    kge_model, configs, e2idx, _ = load_model_components(args.pretrained_kge_path)
+    
+    model_components = load_model_components(args.pretrained_kge_path)
+
+    if model_components is None:
+        print("Failed to load model components.")
+        return  # Or handle as needed (e.g., raise Exception)
+
+    kge_model, configs, e2idx, _ = model_components
+    
     args.embedding_dim = kge_model.embedding_dim
     args.model = kge_model.name
     #args.dataset_dir = configs["dataset_dir"]

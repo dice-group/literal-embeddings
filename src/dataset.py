@@ -115,13 +115,37 @@ class LiteralDataset(Dataset):
 
         return df
 
-    def get_batch(
-        self, entity_indices: torch.Tensor, multi_regression=False
-    ):
-        indices = torch.where(torch.isin(self.triples[:, 0], entity_indices))[0]
-        ent_ids = self.triples[indices, 0]
-        rel_ids = self.triples[indices, 1]
-        labels = self.tails_norm[indices]
+    def get_batch(self, entity_indices, multi_regression=False, random_seed=None):
+        # Combine data and labels into one tensor of shape [n, d+1]
+        combined = torch.cat([self.triples, self.tails_norm.unsqueeze(1)], dim=1)
+
+        # Filter by whether first column matches values in entity_indices
+        mask = torch.isin(combined[:, 0], entity_indices)
+        filtered = combined[mask]
+
+        if random_seed is not None:
+            # Use the provided random seed to shuffle the filtered triples
+            torch.manual_seed(random_seed)
+            shuffled = filtered[torch.randperm(filtered.size(0))]
+
+            # Group by first column (entity indices) and select the first row of each group
+            values = shuffled[:, 0]
+            unique_vals, inverse_indices = torch.unique(values, return_inverse=True)
+            first_indices = torch.stack(
+                [
+                    (inverse_indices == i).nonzero(as_tuple=True)[0][0]
+                    for i in range(len(unique_vals))
+                ]
+            )
+            selected_triples = shuffled[first_indices]
+        else:
+            # Select all triples for each entity
+            selected_triples = filtered
+
+        # Extract entity indices, relation indices, and labels
+        ent_ids = selected_triples[:, 0].long()
+        rel_ids = selected_triples[:, 1].long()
+        labels = selected_triples[:, 2].float()
 
         if multi_regression:
             y_true = torch.full(
@@ -132,6 +156,7 @@ class LiteralDataset(Dataset):
             y_true = labels
 
         return ent_ids, rel_ids, y_true
+
 
     def get_ea_encoding(self):
         ea = torch.zeros(

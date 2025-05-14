@@ -26,10 +26,10 @@ def evaluate_LOCAL_GLOBAL(df_entity_triples, df_train, df_test):
     global_averages = df_train.groupby("relation")["tail"].mean()
 
     # Incoming neighbor dictionary
-    incoming_neighbor_dict = df_train.groupby("tail")["head"].apply(list).to_dict()
+    incoming_neighbor_dict = df_entity_triples.groupby("tail")["head"].apply(list).to_dict()
 
     # Outgoing neighbor dictionary
-    outgoing_neighbor_dict = df_train.groupby("head")["tail"].apply(list).to_dict()
+    outgoing_neighbor_dict = df_entity_triples.groupby("head")["tail"].apply(list).to_dict()
 
     # Merge dictionaries and combine values as sets
     merged_neighbor_dict = {}
@@ -117,7 +117,7 @@ def main():
     dataset_names = ["FB15k-237", "DB15K", "YAGO15k", "mutagenesis"]
     for dataset_name in dataset_names:
         calculate_baselines(dataset_name=dataset_name)
-        print(f"Baseline calculation completed for{dataset_name}")
+        print(f"Baseline calculation completed for {dataset_name}")
 
 if __name__ == "__main__":
     main()

@@ -106,7 +106,7 @@ def train_model(
             Literal_model.train()
             ent_loss_total, lit_loss_total = 0.0, 0.0
 
-            for batch in train_dataloader:
+            for batch_idx, batch in enumerate(train_dataloader):
                 train_X, train_y = batch
                 train_X, train_y = train_X.to(device), train_y.to(device)
 
@@ -117,7 +117,9 @@ def train_model(
                 # Literal model forward
                 entity_ids = train_X[:, 0].long().to("cpu")
                 lit_entities, lit_properties, y_true = literal_dataset.get_batch(
-                    entity_ids, multi_regression=args.multi_regression
+                    entity_ids,
+                    multi_regression=args.multi_regression,
+                    random_seed=batch_idx * epoch,
                 )
                 lit_entities, lit_properties, y_true = (
                     lit_entities.to(device),
@@ -127,7 +129,7 @@ def train_model(
 
                 ent_embeds = model.entity_embeddings(lit_entities)
                 yhat_lit = Literal_model(
-                    ent_embeds, lit_properties, train_ent_embeds=True
+                    ent_embeds, lit_properties, train_ent_embeds=True,
                 )
                 lit_loss = F.l1_loss(yhat_lit, y_true)
 

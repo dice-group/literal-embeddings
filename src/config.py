@@ -30,7 +30,7 @@ def get_default_arguments():
     parser.add_argument(
         "--path_single_kg",
         type=str,
-        default=None,  # "/home/cdemir/Desktop/Softwares/dice-embeddings/dice.nt",
+        default=None, 
         help="Path of a file corresponding to the input knowledge graph",
     )
     # Saved files related arguments
@@ -124,11 +124,11 @@ def get_default_arguments():
     parser.add_argument(
         "--embedding_dim",
         type=int,
-        default=128,
+        default=32,
         help="Number of dimensions for an embedding vector. ",
     )
     parser.add_argument(
-        "--num_epochs", type=int, default=128, help="Number of epochs for training. "
+        "--num_epochs", type=int, default=256, help="Number of epochs for training. "
     )
     parser.add_argument(
         "--batch_size",
@@ -320,15 +320,15 @@ def get_default_arguments():
         help="Perfrom multi-output regression for Literal Embedding model",
     )
     parser.add_argument(
-        "--eval_literals",
+        "--skip_eval_literals",
         action="store_true",
-        default=True,
-        help="Evaluate Literal Embedding model on Test set. Set false only to use literals for combined training",
+        default=False,
+        help="Skip evaluation of Literals on Test set.",
     )
     parser.add_argument(
         "--save_experiment",
         action="store_true",
-        default=False,
+        default=True,
         help="Store the experiment results at provided path",
     )
     parser.add_argument(
@@ -352,13 +352,25 @@ def get_default_arguments():
     parser.add_argument(
         "--log_validation",
         action="store_true",
-        default=False,
+        default=True,
         help="Log the validation loss of the training process",
+    )
+    parser.add_argument(
+        "--test_runs",
+        action="store_true",
+        default=False,
+        help="Test run checker",
     )
     parser.add_argument(
         "--lit_sampling_ratio",
         type=float,
         default=None,
         help="Use to evaluate Literal Embedding model with decreased training ratio",
+    )
+    parser.add_argument(
+        "--train_all_triples",
+        action="store_true",
+        default=False,
+        help="Use all triples for KGE Model training",
     )
     return parser.parse_args()
