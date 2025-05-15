@@ -137,3 +137,7 @@ These scripts are to recreate the experiment results, feel free to try other fea
 
 ### Extention for other KGs
 If you want to extend this to new KGs, create a new folder under KGs/ . Keep all the splits `train.txt`, `test.txt` and `valid.txt`. Create a file containing all the triples at `{dataset_name}_EntityTriples.txt`. For the Literals, keep the literal data inside the `literals` dir inside the dataset folder `KGs/{dataset_name}/literals`. Provide also `train.txt`, `test.txt`, `valid.txt` within the literals folder. Keep all the KGs in triples format with tab sepration. Following this, you can use our approach with any KGs for literal prediction and Augmentation.   
+
+## Using Pre-trained Experiments
+If you wish to use the pre-trained weights, download the  zipped experiment files at https://zenodo.org/records/15423527 and Keep the contents in the base directory. The contents should be aligned as `Experiments/KGE`and so on. You can do that by using the `unzip Experiments.zip -d .`.
+If you download the pre-trained models, you do not need to run any experiments. Use `tables_paper.ipynb`to re-create results from the experiment files.

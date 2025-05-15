@@ -1,7 +1,7 @@
 #!/bin/bash
 
 exp_models=("TransE")  # Make sure the model name casing is correct
-datasets=("FB15k-237" "DB15K" "YAGO15k" "mutagenesis")
+dataset_names=("FB15k-237" "DB15K" "YAGO15k" "mutagenesis")
 
 embedding_dim=100
 num_epochs=256

@@ -16,3 +16,4 @@ logs/*
 *.sh
 viz/*
 src/grad_norm.py
+Experiments.zip
