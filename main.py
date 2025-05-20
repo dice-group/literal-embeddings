@@ -200,7 +200,7 @@ def train_with_kge(args):
             Literal_model=Literal_model,
         )
 
-        if args.eval_literals:
+        if not args.skip_eval_literals:
             lit_results = evaluate_lit_preds(
                 literal_dataset,
                 dataset_type="test",
