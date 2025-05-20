@@ -17,3 +17,5 @@ logs/*
 viz/*
 src/grad_norm.py
 Experiments.zip
+models/*
+Trained_Models.zip
