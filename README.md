@@ -5,15 +5,15 @@ Official Reposiotry for the paper: Neural Regression with Embeddings for Numeric
 The file `Appendix_Neural_Regression.pdf` contains all the Appendix contents for the paper.
 
 ## Installation and Requirements
-If the clone code does not work, you can download the repository and run the commands manually.
-Create Conda Environment:
+If the clone command does not work, you can download the repository and manually traverse into the code directory.
+
 ```bash
 git clone https://github.com/dice-group/literal-embeddings.git
 ```
 ```bash
 cd literal-embeddings
 ```
-
+Create Conda Environment:
 ```bash
 conda create --name litem  python=3.10 && conda activate litem
 ```
