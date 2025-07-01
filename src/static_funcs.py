@@ -5,7 +5,7 @@ import csv
 import pandas as pd
 
 from src.model import LiteralEmbeddings
-from src.trainer import train_literal_model
+from src.trainer_literal import train_literal_model
 from src.utils import evaluate_lit_preds
 
 

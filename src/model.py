@@ -1,6 +1,16 @@
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
+class GatedLinearUnit(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        # output_dim * 2 because half for values, half for gates
+        self.proj = nn.Linear(input_dim, input_dim)
 
+    def forward(self, x):
+        x_proj = self.proj(x)
+        value, gate = x_proj.chunk(2, dim=-1)
+        return value * torch.sigmoid(gate)
 
 class LiteralEmbeddings(torch.nn.Module):
     def __init__(
@@ -20,17 +30,14 @@ class LiteralEmbeddings(torch.nn.Module):
             num_embeddings=num_of_data_properties, embedding_dim=self.embeddings_dim
         )
 
-        self.fc1 = torch.nn.Linear(
-            in_features=self.embeddings_dim * 2,
-            out_features=self.embeddings_dim * 2,
-            bias=True,
-        )
-        self.fc2 = torch.nn.Linear(
-            in_features=self.embeddings_dim * 2,
-            out_features=self.out_features,
-            bias=True,
-        )
-        self.dropout = torch.nn.Dropout(p=dropout)
+        self.hidden_dim = self.embeddings_dim *2
+        self.fc1 = nn.Linear(self.hidden_dim , self.hidden_dim)
+        self.fc2 = nn.Linear(self.hidden_dim, self.hidden_dim)
+        self.fc_out = nn.Linear(self.hidden_dim, 1)
+        self.dropout = nn.Dropout(p=dropout)
+        self.gate_fc  = GatedLinearUnit(self.hidden_dim*2)
+        self.norm1 = torch.nn.LayerNorm(self.hidden_dim)
+        self.ln2 = nn.LayerNorm(self.hidden_dim)
 
     def forward(self, x, relation_idx, train_ent_embeds=False):
 
@@ -38,14 +45,11 @@ class LiteralEmbeddings(torch.nn.Module):
         if not train_ent_embeds:
             head_entity_embeddings = x.detach()
 
-        relation_embeddings = self.data_property_embeddings(relation_idx)
-        tuple_embeddings = torch.cat(
-            (head_entity_embeddings, relation_embeddings), dim=1
-        )
-
-        out1 = F.relu(self.fc1(tuple_embeddings))
-        out1 = self.dropout(out1)
-        out2 = self.fc2(out1 + tuple_embeddings)
+        a_emb = self.data_property_embeddings(relation_idx)
+        tuple_embeddings = torch.cat(( head_entity_embeddings, a_emb ), dim=1)
+        out1 = self.dropout(self.norm1(F.relu(self.fc1(tuple_embeddings))))
+        gated_residual =self.gate_fc(torch.cat((out1, tuple_embeddings), dim = 1))
+        out = self.fc_out(gated_residual)
         if not self.multi_regressor:
-            out2 = out2.flatten()
-        return out2
+            out = out.flatten()
+        return out

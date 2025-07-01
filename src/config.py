@@ -137,7 +137,7 @@ def get_default_arguments():
         help="Mini batch size. If None, automatic batch finder is applied",
     )
     parser.add_argument("--lr", type=float, default=0.05)
-    parser.add_argument("--lit_lr", type=float, default=0.01)
+    parser.add_argument("--lit_lr", type=float, default=0.001)
     parser.add_argument("--lit_epochs", type=int, default=200)
     parser.add_argument(
         "--callbacks",
@@ -372,5 +372,11 @@ def get_default_arguments():
         action="store_true",
         default=False,
         help="Use all triples for KGE Model training",
+    )
+    parser.add_argument(
+        "--early_stopping",
+        action="store_true",
+        default=False,
+        help="Early stopping for training",
     )
     return parser.parse_args()

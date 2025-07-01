@@ -67,6 +67,7 @@ def evaluate_lit_preds(
 
     model.eval()
     literal_model.eval()
+    literal_model.to(device)
 
     with torch.no_grad():
         entity_embeddings = model.entity_embeddings(entities)
