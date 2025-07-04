@@ -1,13 +1,13 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4  # Use the latest compatible version
+    rev: v0.4.4
     hooks:
       - id: ruff
-        files: ^(src/|main\.py)$
+        files: ^src/.*\.py$|^main\.py$
         args: ["--line-length=100"]
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.12.0  # use latest stable version
+    rev: 5.12.0
     hooks:
       - id: isort
-        files: ^(src/|main\.py)$   # <--- here
+        files: ^src/.*\.py$|^main\.py$

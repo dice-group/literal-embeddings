@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 
+
 def train_literal_model(args, literal_dataset, kge_model, Literal_model=None):
     """
     Trains the Literal Embedding model standalone when a pre-trained KGE model is provided.

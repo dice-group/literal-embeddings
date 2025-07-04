@@ -1,7 +1,8 @@
-from pytorch_lightning.callbacks import TQDMProgressBar
-from tqdm import tqdm
 import torch
 from pytorch_lightning import Callback
+from pytorch_lightning.callbacks import TQDMProgressBar
+from tqdm import tqdm
+
 
 class EpochLevelProgressBar(TQDMProgressBar):
     """Custom progress bar for PyTorch Lightning that displays epoch-level metrics."""

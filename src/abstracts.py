@@ -1,5 +1,6 @@
 from pytorch_lightning import Trainer
 
+
 class KGETrainer(Trainer):
     def __init__(self,
                 evaluator=None,

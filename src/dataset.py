@@ -1,7 +1,8 @@
 import os
+
+import numpy as np
 import pandas as pd
 import torch
-import numpy as np
 from torch.utils.data import Dataset
 
 

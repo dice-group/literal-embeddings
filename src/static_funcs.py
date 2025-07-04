@@ -1,16 +1,17 @@
+import csv
 import json
 import os
-import csv
-
-import torch
-import pandas as pd
 import pickle
 from typing import Any, Dict, Tuple
+
+import pandas as pd
+import torch
 from dicee.knowledge_graph_embeddings import KGE
 from dicee.static_funcs import intialize_model
+from sklearn.metrics import mean_absolute_error, root_mean_squared_error
+
 from src.model import LiteralEmbeddings
 from src.trainer_literal import train_literal_model
-from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 
 def extract_metrics(data, split_name):
@@ -256,7 +257,7 @@ def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
         config = kge_obj.configs
         entity_to_idx = kge_obj.entity_to_idx
         relation_to_idx = kge_obj.relation_to_idx
-    except Exception as e:
+    except Exception:
         # print("Cannot load as dicee KGE model.", str(e), "Trying manual load.")
         try:
             config_path = os.path.join(kge_path, "configuration.json")
