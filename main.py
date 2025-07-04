@@ -23,6 +23,7 @@ from src.callbacks import EpochLevelProgressBar,  ASWA
 from src.trainer import  KGEModelLightning
 from src.trainer_literal import train_literal_model
 from src.utils import evaluate_lit_preds, load_model_components
+from src.abstracts import KGETrainer
 from pytorch_lightning.callbacks.stochastic_weight_avg import StochasticWeightAveraging as SWA
 
 from pytorch_lightning import Trainer
@@ -101,6 +102,9 @@ def main(args):
             multi_regression=args.multi_regression,
         )
 
+    # Evaluating the KGE model on Link Prediction task MRR, H@1,3,10
+    evaluator = Evaluator(args=args)
+
     # Training
     kge_model_lightning = KGEModelLightning(
         kge_model, Literal_model, args, literal_dataset
@@ -126,7 +130,7 @@ def main(args):
     # Create Trainer
 
     
-    trainer = Trainer(
+    trainer = KGETrainer(
         max_epochs=args.num_epochs,
         accelerator="auto",  # Use GPU if available
         devices=1,  # Number of GPUs to use
@@ -134,7 +138,10 @@ def main(args):
         logger = False,  # Disable default logger
         check_val_every_n_epoch=0,
         log_every_n_steps=0,
-        enable_checkpointing=False
+        enable_checkpointing=False,
+        evaluator=evaluator,  # Pass the evaluator to the trainer
+        entity_dataset=entity_dataset,  # Pass the entity dataset
+        
 
     )
 
@@ -143,18 +150,6 @@ def main(args):
         kge_model_lightning, train_dataloader, valid_dataloader
     )  # Pass LightningModule, train_dataloader, and valid_dataloader
 
-    # Evaluating the KGE model on Link Prediction task MRR, H@1,3,10
-    evaluator = Evaluator(args=args)
-    kge_model.to("cpu")
-    evaluator.eval(
-        dataset=entity_dataset,
-        trained_model=kge_model,
-        form_of_labelling="EntityPrediction",
-    )
-
-    # can be used to skip literal eval if all literal data is used as train
-    # can be used also if no test/val split avilable
-    # use args.skip_eval_literals  to skip this step
 
     if args.combined_training and not args.skip_eval_literals:
         lit_results = evaluate_lit_preds(

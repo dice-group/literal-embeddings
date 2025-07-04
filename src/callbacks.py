@@ -64,7 +64,7 @@ class ASWA(Callback):
         
         if trainer.global_rank==trainer.local_rank==0:
             param_ensemble = torch.load(f"{self.path}/aswa.pt", torch.device("cpu"))
-            model.load_state_dict(param_ensemble)
+            model.kge_model.load_state_dict(param_ensemble)
 
     @staticmethod
     def compute_mrr(trainer, model) -> float:
@@ -72,12 +72,12 @@ class ASWA(Callback):
         model.eval()
         # (3) MRR performance on the validation data of running model.
         device_name = model.device
-        model.to("cpu")
-        last_val_mrr_running_model = trainer.evaluator.eval(dataset=trainer.dataset,
-                                                            trained_model=model,
-                                                            form_of_labelling=trainer.form_of_labelling,
+        model.kge_model.to("cpu")
+        last_val_mrr_running_model = trainer.evaluator.eval(dataset=trainer.entity_dataset,
+                                                            trained_model=model.kge_model,
+                                                            form_of_labelling="EntityPrediction",
                                                             during_training=True)["Val"]["MRR"]
-        model.to(device_name)
+        model.kge_model.to(device_name)
         # (4) Enable train mode.
         model.train()
         return last_val_mrr_running_model
@@ -152,21 +152,21 @@ class ASWA(Callback):
 
         # (4) Initialize ASWA if it is not initialized.
         if self.val_aswa == -1:
-            torch.save(model.state_dict(), f=f"{self.path}/aswa.pt")
+            torch.save(model.kge_model.state_dict(), f=f"{self.path}/aswa.pt")
             self.alphas.append(1.0)
             self.val_aswa = val_running_model
             return True
         else:
             # (5) Load ASWA ensemble parameters.
-            ensemble_state_dict = self.get_aswa_state_dict(model)
+            ensemble_state_dict = self.get_aswa_state_dict(model.kge_model)
             # (6) Initialize ASWA ensemble with (5).
-            ensemble = type(model)(model.args)
+            ensemble = type(model.kge_model)(model.kge_model.args)
             ensemble.load_state_dict(ensemble_state_dict)
             # (7) Evaluate (6) on the validation data, i.e., perform the lookahead operation.
-            mrr_updated_ensemble_model = trainer.evaluator.eval(dataset=trainer.dataset,
+            mrr_updated_ensemble_model = trainer.evaluator.eval(dataset=trainer.entity_dataset,
                                                                 trained_model=ensemble,
-                                                                form_of_labelling=trainer.form_of_labelling,
+                                                                form_of_labelling="EntityPrediction",
                                                                 during_training=True)["Val"]["MRR"]
             # print(f"| MRR Running {val_running_model:.4f} | MRR ASWA: {self.val_aswa:.4f} |ASWA|:{sum(self.alphas)}")
             # (8) Decide whether ASWA should be updated via the current running model.
-            self.decide(model.state_dict(), ensemble_state_dict, val_running_model, mrr_updated_ensemble_model)
+            self.decide(model.kge_model.state_dict(), ensemble_state_dict, val_running_model, mrr_updated_ensemble_model)

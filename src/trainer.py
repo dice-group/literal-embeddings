@@ -84,3 +84,11 @@ class KGEModelLightning(LightningModule):
     
     def configure_optimizers(self):
         return self.optimizer
+
+    def on_fit_end(self):
+        self.trainer.evaluator.eval(
+            dataset=self.trainer.entity_dataset,
+            trained_model=self.kge_model,
+            form_of_labelling="EntityPrediction",
+            during_training=False
+        )
