@@ -1,13 +1,14 @@
 import os
 import pandas as pd
 import torch
+import numpy as np
 from torch.utils.data import Dataset
 
 
 class LiteralDataset(Dataset):
     def __init__(self, dataset_dir, ent_idx, normalization="z-norm", sampling_ratio = None):
         self.dataset_dir = os.path.join(dataset_dir, "literals")
-        self.normalization = normalization
+        self.normalization_type = normalization
         self.normalization_params = {}
         self.sampling_ratio = sampling_ratio 
 
@@ -68,24 +69,30 @@ class LiteralDataset(Dataset):
         )
 
     def _apply_normalization(self, df):
-        if self.normalization == "z-norm":
-            stats = df.groupby("rel_idx")["tail"].agg(["mean", "std"])
+        """Applies normalization to the tail values based on the specified type."""
+        if self.normalization_type == "z-norm":
+            stats = df.groupby("relation")["tail"].agg(["mean", "std"])
             self.normalization_params = stats.to_dict(orient="index")
-            df["tail_norm"] = df.groupby("rel_idx")["tail"].transform(
+            df["tail_norm"] = df.groupby("relation")["tail"].transform(
                 lambda x: (x - x.mean()) / x.std()
             )
+            self.normalization_params["type"] = "z-norm"
 
-        elif self.normalization == "min-max":
-            stats = df.groupby("rel_idx")["tail"].agg(["min", "max"])
+        elif self.normalization_type == "min-max":
+            stats = df.groupby("relation")["tail"].agg(["min", "max"])
             self.normalization_params = stats.to_dict(orient="index")
-            df["tail_norm"] = df.groupby("rel_idx")["tail"].transform(
+            df["tail_norm"] = df.groupby("relation")["tail"].transform(
                 lambda x: (x - x.min()) / (x.max() - x.min())
             )
+            self.normalization_params["type"] = "min-max"
 
         else:
             print(" No normalization applied.")
             df["tail_norm"] = df["tail"]
-            self.normalization_params = None
+            if self.normalization_type is None:
+                self.normalization_params = {}
+                self.normalization_params["type"] = None
+
 
         return df
 
@@ -166,3 +173,36 @@ class LiteralDataset(Dataset):
         a = self.triples[:, 1]
         ea[e, a] = 1.0
         return ea
+    
+    @staticmethod
+    def denormalize( preds_norm, attributes, normalization_params) -> np.ndarray:
+        """Denormalizes the predictions based on the normalization type.
+
+        Args:
+        preds_norm (np.ndarray): Normalized predictions to be denormalized.
+        attributes (list): List of attributes corresponding to the predictions.
+        normalization_params (dict): Dictionary containing normalization parameters for each attribute.
+
+        Returns:
+            np.ndarray: Denormalized predictions.
+
+        """
+        if normalization_params["type"] == "z-norm":
+            # Extract means and stds only if z-norm is used
+            means = np.array([normalization_params[i]["mean"] for i in attributes])
+            stds = np.array([normalization_params[i]["std"] for i in attributes])
+            return preds_norm * stds + means
+
+        elif normalization_params["type"] == "min-max":
+            # Extract mins and maxs only if min-max is used
+            mins = np.array([normalization_params[i]["min"] for i in attributes])
+            maxs = np.array([normalization_params[i]["max"] for i in attributes])
+            return preds_norm * (maxs - mins) + mins
+
+        elif normalization_params["type"] is None:
+            return  preds_norm  # No normalization applied, return as is
+
+        else:
+            raise ValueError(
+                "Unsupported normalization type. Use 'z-norm', 'min-max', or None."
+            )

@@ -19,3 +19,6 @@ src/grad_norm.py
 Experiments.zip
 models/*
 Trained_Models.zip
+.ruff_cache
+__pycache__/
+*.egg-info/

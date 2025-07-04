@@ -1,33 +1,27 @@
 ### Main File
-import json
 import os
 from datetime import datetime
 
-import pandas as pd
 import torch
 from dicee.dataset_classes import KvsAll
 from dicee.evaluator import Evaluator
 from dicee.knowledge_graph import KG
 from dicee.static_funcs import intialize_model, read_or_load_kg, store
+from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks.stochastic_weight_avg import \
+    StochasticWeightAveraging as SWA
 from torch.utils.data import DataLoader
 
+from src.abstracts import KGETrainer
+from src.callbacks import ASWA, EpochLevelProgressBar
 from src.config import get_default_arguments
 from src.dataset import LiteralDataset
 from src.model import LiteralEmbeddings
-from src.static_funcs import (
-    save_kge_experiments,
-    save_literal_experiments,
-    train_literal_n_runs,
-)
-from src.callbacks import EpochLevelProgressBar,  ASWA
-from src.trainer import  KGEModelLightning
+from src.static_funcs import (evaluate_lit_preds, load_model_components,
+                              save_kge_experiments, save_literal_experiments,
+                              train_literal_n_runs)
+from src.trainer import KGEModelLightning
 from src.trainer_literal import train_literal_model
-from src.utils import evaluate_lit_preds, load_model_components
-from src.abstracts import KGETrainer
-from pytorch_lightning.callbacks.stochastic_weight_avg import StochasticWeightAveraging as SWA
-
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import EarlyStopping
 
 
 def main(args):
