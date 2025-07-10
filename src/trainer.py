@@ -31,14 +31,14 @@ class KGEModelLightning(LightningModule):
 
     def training_step(self, batch, batch_idx):
         train_X, train_y = batch
-
         train_X, train_y = train_X.to(self.device), train_y.to(self.device)
 
-        if self.Literal_model:
-            # KGE model forward
-            yhat_e = self.kge_model(train_X)
-            ent_loss = self.bce_loss_fn(yhat_e, train_y)
+        # Always train KGE model
+        yhat_e = self.kge_model(train_X)
+        ent_loss = self.bce_loss_fn(yhat_e, train_y)
+        self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True)
 
+        if self.Literal_model and  self.current_epoch > self.args.deffered_literal_training_epochs:
             # Literal model forward
             entity_ids = train_X[:, 0].long().to("cpu")
             lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(
@@ -57,22 +57,17 @@ class KGEModelLightning(LightningModule):
                 ent_embeds, lit_properties, train_ent_embeds=True
             )
             lit_loss = F.l1_loss(yhat_lit, y_true)
+            self.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True)
 
             # Combined loss
             scale = torch.log1p(
                 2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
             ).detach()
             total_loss = (1 - scale) * ent_loss + scale * lit_loss
-
-            self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True)
-            self.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True)
             return total_loss
 
         else:
-            yhat = self.kge_model(train_X)
-            loss = self.bce_loss_fn(yhat, train_y)
-            self.log("ent_loss", loss, on_step=True, on_epoch=True)
-            return loss
+            return ent_loss
 
     def validation_step(self, batch):
         val_X, val_y = batch
@@ -81,7 +76,7 @@ class KGEModelLightning(LightningModule):
         val_loss = self.bce_loss_fn(yhat_val, val_y)
         self.log("ent_loss_val", val_loss, on_step=True, on_epoch=True)
         return val_loss
-    
+
     def configure_optimizers(self):
         return self.optimizer
 

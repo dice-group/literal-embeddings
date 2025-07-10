@@ -12,6 +12,7 @@ from pytorch_lightning.callbacks.stochastic_weight_avg import \
     StochasticWeightAveraging as SWA
 from torch.utils.data import DataLoader
 
+from src.literalE_models import DistMult_EA
 from src.abstracts import KGETrainer
 from src.callbacks import ASWA, EpochLevelProgressBar
 from src.config import get_default_arguments
@@ -25,47 +26,46 @@ from src.trainer_literal import train_literal_model
 
 
 def main(args):
-    # Save Experiment Results
-    if args.full_storage_path is None:
+    # Set up experiment storage path
+    if not args.full_storage_path:
+        dataset_name = os.path.basename(args.dataset_dir)
+        if not dataset_name:
+            dataset_name  = os.path.basename(args.path_single_kg)
         if args.test_runs:
-            exp_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
-            exp_path_name = f"Test_runs/{exp_date_time}"
+            exp_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
+            args.full_storage_path = f"Test_runs/{exp_time}"
+        elif args.combined_training:
+            args.full_storage_path = f"Experiments/KGE_Combined/{dataset_name}_combined/{args.model}"
         else:
-            dataset_name = os.path.basename(args.dataset_dir)
-            if args.combined_training:
-                exp_path_name = f"Experiments/KGE_Combined/{dataset_name}_combined/{args.model}"
-            else:
-                exp_path_name = f"Experiments/KGE/{dataset_name}/{args.model}"
-        args.full_storage_path = exp_path_name
+            args.full_storage_path = f"Experiments/KGE/{dataset_name}/{args.model}"
     os.makedirs(args.full_storage_path, exist_ok=True)
-    print("Training dir ", args.full_storage_path)
+    print("Training dir", args.full_storage_path)
 
-    # Device setup
+    # Device and seed setup
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(args.random_seed)
     torch.cuda.manual_seed_all(args.random_seed)
 
-    # Model and Dataset Initialization
+    # Load dataset and set entity/relation counts
     entity_dataset = read_or_load_kg(args, KG)
     args.num_entities = entity_dataset.num_entities
     args.num_relations = entity_dataset.num_relations
 
-    # kvsall dataset initialization
+    # Prepare training dataloader
     train_dataset = KvsAll(
         train_set_idx=entity_dataset.train_set,
         entity_idxs=entity_dataset.entity_to_idx,
         relation_idxs=entity_dataset.relation_to_idx,
         form="EntityPrediction",
         label_smoothing_rate=args.label_smoothing_rate,
-)
+    )
     train_dataloader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=7
     )
 
-    if args.train_all_triples:
-        args.log_validation = False
-
-    if args.log_validation:
+    # Prepare validation dataloader if needed
+    valid_dataloader = None
+    if args.log_validation and not args.train_all_triples:
         valid_dataset = KvsAll(
             train_set_idx=entity_dataset.valid_set,
             entity_idxs=entity_dataset.entity_to_idx,
@@ -75,76 +75,72 @@ def main(args):
         valid_dataloader = DataLoader(
             valid_dataset, batch_size=args.batch_size, shuffle=False, num_workers=7
         )
-    else:
-        valid_dataloader = None
 
-    # initialize KGE model using dicee framework model initialization
-    kge_model, _ = intialize_model(vars(args), 0)
+    # Combined training and literal model setup
     literal_dataset = None
     Literal_model = None
-
+    if args.model == "DistMult_EA":
+        args.combined_training = True
+        args.skip_eval_literals = True
     if args.combined_training:
-        # intialize literal embedding model and dataset for combined training with KGE
         literal_dataset = LiteralDataset(
             dataset_dir=args.dataset_dir,
             ent_idx=entity_dataset.entity_to_idx,
             normalization=args.lit_norm,
         )
+        args.num_attributes = literal_dataset.num_data_properties
         Literal_model = LiteralEmbeddings(
             num_of_data_properties=literal_dataset.num_data_properties,
             embedding_dims=args.embedding_dim,
             multi_regression=args.multi_regression,
         )
 
-    # Evaluating the KGE model on Link Prediction task MRR, H@1,3,10
-    evaluator = Evaluator(args=args)
+    # Model initialization
+    if args.model == "DistMult_EA":
+        kge_model = DistMult_EA(vars(args))
+    else:
+        kge_model, _ = intialize_model(vars(args), 0)
 
-    # Training
+    # Evaluator and Lightning module
+    evaluator = Evaluator(args=args)
     kge_model_lightning = KGEModelLightning(
         kge_model, Literal_model, args, literal_dataset
     )
 
-    callbacks = []
-    callbacks.append(EpochLevelProgressBar())
+    # Callbacks setup
+    callbacks = [EpochLevelProgressBar()]
     if args.early_stopping:
-        early_stopping_callback = EarlyStopping(
+        callbacks.append(EarlyStopping(
             monitor="ent_loss_val",
             patience=args.early_stopping_patience,
             mode="min",
-        )
-        callbacks.append(early_stopping_callback)
-
+        ))
     if args.swa:
-        callbacks.append(SWA(swa_epoch_start=1,swa_lrs=0.05))
-   
+        callbacks.append(SWA(swa_epoch_start=1, swa_lrs=0.05))
     elif args.adaptive_swa:
         callbacks.append(ASWA(num_epochs=args.num_epochs, path=args.full_storage_path))
     else:
         print("No Stochastic Weight Averaging (SWA) or Adaptive SWA (ASWA) used.")
-    # Create Trainer
 
-    
+    # Trainer setup
     trainer = KGETrainer(
         max_epochs=args.num_epochs,
-        accelerator="auto",  # Use GPU if available
-        devices=1,  # Number of GPUs to use
+        accelerator="auto",
+        devices=1,
         callbacks=callbacks,
-        logger = False,  # Disable default logger
+        logger=False,
         check_val_every_n_epoch=0,
         log_every_n_steps=0,
         enable_checkpointing=False,
-        evaluator=evaluator,  # Pass the evaluator to the trainer
-        entity_dataset=entity_dataset,  # Pass the entity dataset
-        
-
+        evaluator=evaluator,
+        entity_dataset=entity_dataset,
     )
 
-    # Train the model
-    trainer.fit(
-        kge_model_lightning, train_dataloader, valid_dataloader
-    )  # Pass LightningModule, train_dataloader, and valid_dataloader
+    # Training
+    trainer.fit(kge_model_lightning, train_dataloader, valid_dataloader)
 
-
+    # Literal evaluation if needed
+    lit_results = None
     if args.combined_training and not args.skip_eval_literals:
         lit_results = evaluate_lit_preds(
             literal_dataset,
@@ -154,10 +150,8 @@ def main(args):
             device=args.device,
             multi_regression=args.multi_regression,
         )
-    else:
-        lit_results = None
 
-    # save kge model, training configs,
+    # Save experiment results
     if args.save_experiment:
         store(
             trained_model=kge_model,

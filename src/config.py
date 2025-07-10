@@ -379,4 +379,17 @@ def get_default_arguments():
         default=False,
         help="Early stopping for training",
     )
+    parser.add_argument(
+        "--deffered_literal_training",
+        action="store_true",
+        default=False,
+        help="  Deffered Literal Training for KGE Model",
+    )
+    parser.add_argument(
+        "--deffered_literal_training_epochs",
+        type=int,
+        default=2,
+        help="Number of epochs for deffered literal training",
+
+    )
     return parser.parse_args()
