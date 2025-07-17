@@ -44,7 +44,7 @@ class KGEModelLightning(LightningModule):
             lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(
                 entity_ids,
                 multi_regression=self.args.multi_regression,
-                random_seed=batch_idx * self.current_epoch,
+                random_seed = None,
             )
             lit_entities, lit_properties, y_true = (
                 lit_entities.to(self.device),
