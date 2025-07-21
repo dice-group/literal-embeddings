@@ -4,8 +4,8 @@ def parse_args():
     """Parse command line arguments for model training"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="Family")
-    parser.add_argument("--model", type=str, default="distmult_literal")
-    parser.add_argument("--num_iterations", type=int, default=200)
+    parser.add_argument("--model", type=str, default="conve_literal")
+    parser.add_argument("--num_iterations", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--dr", type=float, default=1.0)
@@ -28,7 +28,18 @@ def parse_args():
     # Set unified embedding dimensions
     args.edim = args.embedding_dim
     args.rdim = args.embedding_dim
-    args.embedding_shape1 = args.embedding_dim
+    # For ConvE with 128-dim embeddings, use 8 for balanced 16x16 conv input
+    args.embedding_shape1 = 8
+    
+    # Calculate the correct hidden_size for ConvE based on the conv output
+    # After reshape: (batch, 1, emb_dim1, emb_dim2) = (batch, 1, 8, 16)
+    # After concat: (batch, 1, 16, 16)
+    # After 3x3 conv: (batch, 32, 14, 14)
+    # After flatten: batch, 32 * 14 * 14 = batch, 6272
+    emb_dim2 = args.embedding_dim // args.embedding_shape1
+    conv_out_h = 2 * args.embedding_shape1 - 2  # 16 - 2 = 14
+    conv_out_w = emb_dim2 - 2  # 16 - 2 = 14
+    args.hidden_size = 32 * conv_out_h * conv_out_w  # 32 * 14 * 14 = 6272
     
     return args
 

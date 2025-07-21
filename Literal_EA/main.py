@@ -52,6 +52,10 @@ def main(args):
     """Main training function"""
     data_dir = f"{args.input}/{args.dataset}/"
     exp_dir = f"Experiments/{args.dataset}_{args.model}/"
+    if args.swa:
+        exp_dir = exp_dir + 'swa'
+    if args.adaptive_swa:
+        exp_dir = exp_dir + "aswa"
     if not os.path.exists(exp_dir):
         os.makedirs(exp_dir)
         
@@ -113,7 +117,6 @@ def main(args):
     
     # Setup callbacks
     callbacks  = []
-    args.adaptive_swa = True
     if args.swa:
         callbacks.append(SWA(swa_epoch_start=1, swa_lrs=args.lr))
         print("Using Stochastic Weight Averaging (SWA)")

@@ -24,7 +24,7 @@ class ASWA(Callback):
         
         if trainer.global_rank==trainer.local_rank==0:
             param_ensemble = torch.load(f"{self.path}/aswa.pt", torch.device("cpu"))
-            model.kge_model.load_state_dict(param_ensemble)
+            model.model.load_state_dict(param_ensemble)
 
     @staticmethod
     def compute_mrr(trainer, model) -> float:

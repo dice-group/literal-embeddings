@@ -134,6 +134,9 @@ class TuckER_Literal(torch.nn.Module):
         self.numerical_literals = load_num_lit(kwargs["ent2idx"], kwargs["dataset"])
         self.n_num_lit = self.numerical_literals.size(1)
         self.emb_num_lit = Gate(d1 + self.n_num_lit, d1)
+        if self.cuda():
+            self.numerical_literals = self.numerical_literals.cuda()
+            self.emb_num_lit = self.emb_num_lit.cuda()
 
     def to_cuda(self):
         self.numerical_literals = self.numerical_literals.cuda()
@@ -410,6 +413,10 @@ class ComplEx_Literal(torch.nn.Module):
         self.n_num_lit = self.numerical_literals.size(1)
         self.emb_num_lit = Gate(d1 + self.n_num_lit, d1)
 
+        if self.cuda():
+            self.numerical_literals = self.numerical_literals.cuda()
+            self.emb_num_lit = self.emb_num_lit.cuda()
+
     def to_cuda(self):
         self.numerical_literals = self.numerical_literals.cuda()
         self.emb_num_lit = self.emb_num_lit.cuda()
@@ -579,6 +586,10 @@ class ConvE_Literal(torch.nn.Module):
         self.numerical_literals = load_num_lit(kwargs["ent2idx"], kwargs["dataset"])
         self.n_num_lit = self.numerical_literals.size(1)
         self.emb_num_lit = Gate(d1 + self.n_num_lit, d1)
+
+        if self.cuda():
+            self.numerical_literals = self.numerical_literals.cuda()
+            self.emb_num_lit = self.emb_num_lit.cuda()
 
     def to_cuda(self):
         self.numerical_literals = self.numerical_literals.cuda()
