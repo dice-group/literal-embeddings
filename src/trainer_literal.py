@@ -4,19 +4,19 @@ import torch.optim as optim
 from tqdm import tqdm
 
 
-def train_literal_model(args, literal_dataset, kge_model,
+def train_literal_model(args, kge_model,
                         literal_model=None, literal_batch_loader=None):
     """
     Trains the Literal Embedding model standalone when a pre-trained KGE model is provided.
 
     Parameters:
     - args: Namespace with configuration values
-    - literal_dataset: Dataset with literal triples
     - kge_model: Pretrained knowledge graph embedding model
-    - Literal_model: The literal embedding model to train
+    - literal_model: The literal embedding model to train
+    - literal_batch_loader: Dataloader for literal triples
 
     Returns:
-    - Literal_model: Trained literal model
+    - literal_model: Trained literal model
     - loss_log: Dictionary logging the literal training loss per epoch
     """
 
@@ -27,28 +27,6 @@ def train_literal_model(args, literal_dataset, kge_model,
 
     loss_log = {"lit_loss": []}
     optimizer = optim.Adam(literal_model.parameters(), lr=args.lit_lr)
-
-    # Prepare training data
-    triples = literal_dataset.triples
-    lit_entities = triples[:, 0].long()
-    lit_properties = triples[:, 1].long()
-
-    if args.multi_regression:
-        num_samples = lit_entities.size(0)
-        y_true = torch.zeros(
-            num_samples, literal_dataset.num_data_properties
-        )
-        y_true[torch.arange(num_samples), lit_properties] = (
-            literal_dataset.tails_norm
-        )
-    else:
-        y_true = literal_dataset.tails_norm
-
-    # Freeze gradients for KGE entity embeddings
-    with torch.no_grad():
-        ent_ebds = kge_model.entity_embeddings(lit_entities)
-
-    ent_ebds, lit_properties, y_true = ent_ebds.to(device), lit_properties.to(device), y_true.to(device)
 
     # Can use a DataLoader for large datasets (currently assumes full-batch training)
     # Training loop
@@ -63,10 +41,10 @@ def train_literal_model(args, literal_dataset, kge_model,
             lit_loss = F.l1_loss(yhat, batch_y)
             lit_loss.backward()
             optimizer.step()
-            epoch_loss += lit_loss
+            epoch_loss += lit_loss.item()
 
         avg_epoch_loss = epoch_loss / len(literal_batch_loader)
-        tqdm_bar.set_postfix_str(f"loss_lit={lit_loss:.5f}")
-        loss_log["lit_loss"].append(avg_epoch_loss.item())
+        tqdm_bar.set_postfix_str(f"loss_lit={avg_epoch_loss:.5f}")
+        loss_log["lit_loss"].append(avg_epoch_loss)
 
     return literal_model, loss_log

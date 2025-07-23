@@ -314,12 +314,6 @@ def get_default_arguments():
         help="Training of  Literal Embedding Model",
     )
     parser.add_argument(
-        "--multi_regression",
-        action="store_true",
-        default=False,
-        help="Perfrom multi-output regression for Literal Embedding model",
-    )
-    parser.add_argument(
         "--skip_eval_literals",
         action="store_true",
         default=False,
@@ -380,16 +374,26 @@ def get_default_arguments():
         help="Early stopping for training",
     )
     parser.add_argument(
-        "--deffered_literal_training",
-        action="store_true",
-        default=False,
-        help="  Deffered Literal Training for KGE Model",
+        "--deferred_literal_training",
+        type=int,
+        default=0,
+        help="Number of epochs for deferred literal training for KGE Model. Set to 0 to disable.",
     )
     parser.add_argument(
-        "--deffered_literal_training_epochs",
-        type=int,
-        default=2,
-        help="Number of epochs for deffered literal training",
-
+        "--freeze_entity_embeddings",
+        action="store_true",
+        default=True,
+        help="Freeze entity embeddings during training.",
+    )
+    parser.add_argument(
+        "--gate_residual",
+        action="store_true",
+        default=True,
+        help="Use gate residual connections in Literal Embedding Model.",
+    )
+    parser.add_argument(
+        "--multi_regression",
+        action="store_true",
+        help="Perform multi-output regression for Literal Embedding model.",
     )
     return parser.parse_args()

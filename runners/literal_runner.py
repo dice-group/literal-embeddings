@@ -1,41 +1,33 @@
-### Literal Training Runner
 import os
-
+import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import DataLoader
-
 from src.dataset import LiteralDataset
 from src.model import LiteralEmbeddings
 from src.static_funcs import (evaluate_lit_preds, load_model_components,
-                              save_literal_experiments, train_literal_n_runs)
+                              save_literal_experiments)
 from src.trainer_literal import train_literal_model
-
 
 def train_literals(args):
     """Train literal embeddings using a pre-trained KGE model."""
-    # torch related initializations
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(args.random_seed)
-    torch.cuda.manual_seed_all(args.random_seed)
+    if args.device.type == "cuda":
+        torch.cuda.manual_seed_all(args.random_seed)
+        torch.backends.cudnn.benchmark = True
 
-    # load KGE model as dicee KGE object or local KGE object
     model_components = load_model_components(args.pretrained_kge_path)
-
     if model_components is None:
         print("Failed to load model components.")
-        return  # Or handle as needed (e.g., raise Exception)
+        return
 
     kge_model, configs, e2idx, _ = model_components
-    
     args.embedding_dim = kge_model.embedding_dim
     args.model = kge_model.name
-    #args.dataset_dir = configs["dataset_dir"]
     dataset_name = os.path.basename(args.dataset_dir)
 
-    print(
-        "Training Literal Embedding model using pre-trained KGE model at %s"
-        % args.pretrained_kge_path
-    )
+    print(f"Training Literal Embedding model using pre-trained KGE model at {args.pretrained_kge_path}")
 
     if not args.full_storage_path:
         args.full_storage_path = (
@@ -49,29 +41,35 @@ def train_literals(args):
         literal_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=7,
+        num_workers=min(4, os.cpu_count()),  # Tune this
+        pin_memory=args.device.type == "cuda",
     )
-    
-    if args.num_literal_runs > 1:
-        lit_loss, lit_results = train_literal_n_runs(
-            args=args, kge_model=kge_model, literal_dataset=literal_dataset
-        )
-    else:
+
+    final_loss_df = None
+    final_results_df = None
+
+    for run in range(args.num_literal_runs):
+        print(f"Starting literal training run {run + 1}/{args.num_literal_runs}")
+        # Set different seeds per run if needed
+        torch.manual_seed(args.random_seed + run)
+        if args.device.type == "cuda":
+            torch.cuda.manual_seed_all(args.random_seed + run)
+
         literal_model = LiteralEmbeddings(
             num_of_data_properties=literal_dataset.num_data_properties,
             embedding_dims=kge_model.embedding_dim,
             entity_embeddings=kge_model.entity_embeddings,
-            freeze_entity_embeddings=True,
-            gate_residual=True
+            freeze_entity_embeddings=args.freeze_entity_embeddings,
+            gate_residual=args.gate_residual,
         )
         literal_model, lit_loss = train_literal_model(
             args=args,
-            literal_dataset=literal_dataset,
             kge_model=kge_model,
             literal_model=literal_model,
             literal_batch_loader=literal_batch_loader
         )
 
+        lit_results = None
         if not args.skip_eval_literals:
             lit_results = evaluate_lit_preds(
                 literal_dataset,
@@ -81,6 +79,41 @@ def train_literals(args):
                 device=args.device,
                 multi_regression=args.multi_regression,
             )
+            if lit_results is not None:
+                lit_results["iteration"] = run + 1
+
+            # Convert lit_results to DataFrame and rename columns
+            df_results = pd.DataFrame(lit_results)
+            df_results.rename(
+                columns={
+                    col: f"{col}_run_{run+1}" for col in df_results.columns if col != "relation"
+                },
+                inplace=True,
+            )
+
+            # Convert lit_loss to DataFrame and rename
+            df_loss = pd.DataFrame(lit_loss)
+            df_loss.rename(columns={"lit_loss": f"lit_loss_run_{run+1}"}, inplace=True)
+
+            # Initialize and add epoch index for the first run
+            if final_loss_df is None:
+                final_loss_df = df_loss.copy()
+                final_loss_df.insert(0, "epoch", range(1, len(df_loss) + 1))
+                
+            else:
+                final_loss_df = pd.concat([final_loss_df, df_loss], axis=1)
+                
+            if final_results_df is None:
+                final_results_df = df_results.copy()
+            else:
+                final_results_df = pd.merge(final_results_df, df_results, on="relation", how="left")
+
+
 
     if args.save_experiment:
-        save_literal_experiments(args=args, loss_df=lit_loss, results_df=lit_results)
+        save_literal_experiments(
+            args=args,
+            literal_model=literal_model,
+            loss_df=final_loss_df,
+            results_df=final_results_df
+        )
