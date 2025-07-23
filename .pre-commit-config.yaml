@@ -1,13 +1,11 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4
+    rev: v0.4.4  # or latest
     hooks:
       - id: ruff
         files: ^src/.*\.py$|^main\.py$
-        args: ["--line-length=100"]
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
-        files: ^src/.*\.py$|^main\.py$
+        args: [
+          "--line-length=100",  # This sets limits but won't trigger formatting unless enabled
+          "--select=I",         # Only run import sorting
+          "--fix"               # Actually apply import sorting
+        ]

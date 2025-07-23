@@ -207,14 +207,11 @@ def evaluate_lit_preds(
 
     model.eval()
     literal_model.eval()
-    literal_model.to(device)
+    device = literal_model.device if hasattr(literal_model, 'device') else device
+    entities, properties = entities.to(device), properties.to(device)
 
     with torch.no_grad():
-        entity_embeddings = model.entity_embeddings(entities)
-        entity_embeddings, properties = entity_embeddings.to(device), properties.to(
-            device
-        )
-        predictions = literal_model.forward(entity_embeddings, properties)
+        predictions = literal_model.forward(entities, properties)
 
     if multi_regression:
         preds_norm = (

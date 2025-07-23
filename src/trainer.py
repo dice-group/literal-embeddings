@@ -4,7 +4,7 @@ import torch.optim as optim
 from pytorch_lightning import LightningModule
 
 
-class KGEModelLightning(LightningModule):
+class KGE_Literal(LightningModule):
     def __init__(self, kge_model, Literal_model, args, literal_dataset):
         super().__init__()
         self.kge_model = kge_model
