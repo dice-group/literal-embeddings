@@ -1,4 +1,4 @@
-### Training with Literals
+### Literal Training Runner
 import os
 
 import torch

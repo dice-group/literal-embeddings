@@ -1,9 +1,11 @@
 import os
+import sys
+sys.path.append('..')
 
 import pandas as pd
 import torch
 
-from src.utils import load_model_components
+from src.static_funcs import load_model_components
 
 
 def calculate_abalation_scores(exp_path: str):

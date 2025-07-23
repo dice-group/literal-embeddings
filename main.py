@@ -1,7 +1,7 @@
 ### Main Entry Point
+from runners.kge_runner import train_kge_model
+from runners.literal_runner import train_literals
 from src.config import get_default_arguments
-from train_kge import train_kge_model
-from train_literals import train_literals
 
 
 def main():

@@ -1,4 +1,4 @@
-### Training with KGE Model
+### KGE Training Runner
 import os
 from datetime import datetime
 
