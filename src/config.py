@@ -314,6 +314,13 @@ def get_default_arguments():
         help="Training of  Literal Embedding Model",
     )
     parser.add_argument(
+        "--literal_model",
+        type=str,
+        default="clifford",
+        choices=["mlp", "clifford"],
+        help="Type of literal embedding model to use. Choices: 'mlp' (MLP-based) or 'clifford' (Clifford algebra-based). Default: 'clifford'",
+    )
+    parser.add_argument(
         "--skip_eval_literals",
         action="store_true",
         default=False,

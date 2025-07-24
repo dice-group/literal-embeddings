@@ -2,13 +2,78 @@ import csv
 import json
 import os
 import pickle
-from typing import Any, Dict, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 import torch
 from dicee.knowledge_graph_embeddings import KGE
 from dicee.static_funcs import intialize_model
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
+
+
+@dataclass
+class KGEModelComponents:
+    """
+    Data structure to organize and track KGE model components.
+    
+    Attributes:
+        model: The loaded KGE model
+        config: Model configuration dictionary
+        entity_to_idx: Entity to index mapping
+        relation_to_idx: Relation to index mapping
+        er_vocab: Entity-relation vocabulary (optional)
+        test_set: Test set array (optional)
+        model_path: Path to the model directory
+    """
+    model: Any
+    config: Dict
+    entity_to_idx: Dict[str, int]
+    relation_to_idx: Dict[str, int]
+    er_vocab: Optional[Any] = None
+    test_set: Optional[np.ndarray] = None
+    model_path: Optional[str] = None
+    
+    @property
+    def embedding_dim(self) -> int:
+        """Get the embedding dimension from the model."""
+        return self.model.embedding_dim
+    
+    @property
+    def model_name(self) -> str:
+        """Get the model name."""
+        return self.model.name
+    
+    @property
+    def num_entities(self) -> int:
+        """Get the number of entities."""
+        return len(self.entity_to_idx)
+    
+    @property
+    def num_relations(self) -> int:
+        """Get the number of relations."""
+        return len(self.relation_to_idx)
+    
+    def get_entity_idx(self, entity: str) -> int:
+        """Get index for an entity."""
+        return self.entity_to_idx.get(entity, -1)
+    
+    def get_relation_idx(self, relation: str) -> int:
+        """Get index for a relation."""
+        return self.relation_to_idx.get(relation, -1)
+    
+    def summary(self) -> Dict[str, Any]:
+        """Get a summary of the model components."""
+        return {
+            "model_name": self.model_name,
+            "embedding_dim": self.embedding_dim,
+            "num_entities": self.num_entities,
+            "num_relations": self.num_relations,
+            "model_path": self.model_path,
+            "has_er_vocab": self.er_vocab is not None,
+            "has_test_set": self.test_set is not None
+        }
 
 
 def extract_metrics(data, split_name):
@@ -178,25 +243,34 @@ def evaluate_lit_preds(
     return attr_error_metrics
     
 
-def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
+def load_model_components(kge_path: str) -> Optional[KGEModelComponents]:
     """Load configuration and weights for a KGE model or a direct KGE model.
 
     Args:
-        path (str): The path to the directory containing the model's files.
+        kge_path (str): The path to the directory containing the model's files.
 
     Returns:
-        Tuple[Any, Dict]: A tuple containing the loaded model and its configuration.
+        Optional[KGEModelComponents]: A KGEModelComponents object containing all model 
+        components, or None if loading fails.
 
     Raises:
         FileNotFoundError: If one or more required files do not exist.
         Exception: For any other error that occurs during the loading process.
     """
+    kge_model = None
+    config = None
+    entity_to_idx = None
+    relation_to_idx = None
+    er_vocab = None
+    test_set = None
+    
     try:
         kge_obj = KGE(path=kge_path)
         kge_model = kge_obj.model
         config = kge_obj.configs
         entity_to_idx = kge_obj.entity_to_idx
         relation_to_idx = kge_obj.relation_to_idx
+        print("DiCE KGE model loaded successfully!")
     except Exception:
         # print("Cannot load as dicee KGE model.", str(e), "Trying manual load.")
         try:
@@ -237,11 +311,96 @@ def load_model_components(kge_path: str) -> Tuple[Any, Dict]:
 
             kge_model, _ = intialize_model(config, 0)
             kge_model.load_state_dict(weights)
+            print("Manual KGE load successful!")
 
         except Exception as e:
             print(
                 "Building the KGE model failed, check pre-trained KGE directory", str(e)
             )
             return None
-        print("Manual KGE load Successfull!!")
-    return kge_model, config, entity_to_idx, relation_to_idx
+    
+    # Load optional components
+    try:
+        er_vocab_path = os.path.join(kge_path, "er_vocab.p")
+        if os.path.exists(er_vocab_path):
+            er_vocab = pickle.load(open(er_vocab_path, "rb"))
+    except Exception as e:
+        print(f"Warning: Could not load er_vocab: {e}")
+    
+    try:
+        test_set_path = os.path.join(kge_path, "test_set.npy")
+        if os.path.exists(test_set_path):
+            test_set = np.load(test_set_path, allow_pickle=True)
+    except Exception as e:
+        print(f"Warning: Could not load test_set: {e}")
+    
+    # Create and return the KGEModelComponents object
+    model_components = KGEModelComponents(
+        model=kge_model,
+        config=config,
+        entity_to_idx=entity_to_idx,
+        relation_to_idx=relation_to_idx,
+        er_vocab=er_vocab,
+        test_set=test_set,
+        model_path=kge_path
+    )
+    return model_components
+
+
+@torch.no_grad()
+def evaluate_link_prediction_performance_with_reciprocals(model, triples,
+                                                          model_components =None):
+    model.eval()
+    entity_to_idx = model_components.entity_to_idx
+    relation_to_idx = model_components.relation_to_idx
+    batch_size = model_components.config["batch_size"]
+    num_triples = len(triples)
+    er_vocab = model_components.er_vocab
+    ranks = []
+    # Hit range
+    hits_range = [i for i in range(1, 11)]
+    hits = {i: [] for i in hits_range}
+    # Iterate over integer indexed triples in mini batch fashion
+    for i in range(0, num_triples, batch_size):
+        # (1) Get a batch of data.
+        str_data_batch = triples[i:i + batch_size]
+        data_batch = np.array(
+            [[entity_to_idx[str_triple[0]], relation_to_idx[str_triple[1]], entity_to_idx[str_triple[2]]] for
+             str_triple in str_data_batch])
+        # (2) Extract entities and relations.
+        e1_idx_r_idx, e2_idx = torch.LongTensor(data_batch[:, [0, 1]]), torch.tensor(data_batch[:, 2])
+        # (3) Predict missing entities, i.e., assign probs to all entities.
+        predictions = model(e1_idx_r_idx)
+        # (4) Filter entities except the target entity
+        for j in range(data_batch.shape[0]):
+            # (4.1) Get the ids of the head entity, the relation and the target tail entity in the j.th triple.
+            str_h, str_r, str_t = str_data_batch[j]
+
+            id_e, id_r, id_e_target = data_batch[j]
+            # (4.2) Get all ids of all entities occurring with the head entity and relation extracted in 4.1.
+            filt = [entity_to_idx[_] for _ in er_vocab[(str_h, str_r)]]
+            # (4.3) Store the assigned score of the target tail entity extracted in 4.1.
+            target_value = predictions[j, id_e_target].item()
+            # (4.4.1) Filter all assigned scores for entities.
+            predictions[j, filt] = -np.Inf
+            # (4.5) Insert 4.3. after filtering.
+            predictions[j, id_e_target] = target_value
+        # (5) Sort predictions.
+        sort_values, sort_idxs = torch.sort(predictions, dim=1, descending=True)
+        # (6) Compute the filtered ranks.
+        for j in range(data_batch.shape[0]):
+            # index between 0 and \inf
+            rank = torch.where(sort_idxs[j] == e2_idx[j])[0].item() + 1
+            ranks.append(rank)
+            for hits_level in hits_range:
+                if rank <= hits_level:
+                    hits[hits_level].append(1.0)
+    # (7) Sanity checking: a rank for a triple
+    assert len(triples) == len(ranks) == num_triples
+    hit_1 = sum(hits[1]) / num_triples
+    hit_3 = sum(hits[3]) / num_triples
+    hit_10 = sum(hits[10]) / num_triples
+    mean_reciprocal_rank = np.mean(1. / np.array(ranks))
+
+    results = {'H@1': hit_1, 'H@3': hit_3, 'H@10': hit_10, 'MRR': mean_reciprocal_rank}
+    return results

@@ -30,7 +30,7 @@ def train_literal_model(args, kge_model,
 
     # Can use a DataLoader for large datasets (currently assumes full-batch training)
     # Training loop
-    for epoch in (tqdm_bar := tqdm(range(args.num_epochs))):
+    for epoch in (tqdm_bar := tqdm(range(args.lit_epochs))):
         epoch_loss = 0
         for batch_x, batch_y in literal_batch_loader:
             optimizer.zero_grad()

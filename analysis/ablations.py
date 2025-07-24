@@ -9,9 +9,16 @@ from src.static_funcs import load_model_components
 
 
 def calculate_abalation_scores(exp_path: str):
-    kge_model, configs, entity_to_idx, relation_to_idx = load_model_components(
-        kge_path=exp_path
-    )
+    model_components = load_model_components(kge_path=exp_path)
+    if model_components is None:
+        print("Failed to load model components.")
+        return
+    
+    kge_model = model_components.model
+    configs = model_components.config
+    entity_to_idx = model_components.entity_to_idx
+    relation_to_idx = model_components.relation_to_idx
+    
     test_kg_dir = configs["dataset_dir"] + "/test.txt"
 
     # process test set and map to idx
