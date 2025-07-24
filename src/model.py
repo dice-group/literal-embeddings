@@ -101,6 +101,7 @@ class LiteralEmbeddingsClifford(nn.Module):
         entity_embeddings (torch.tensor): Pre-trained entity embeddings.
         dropout (float): Dropout rate for regularization.
         freeze_entity_embeddings (bool): Whether to freeze the entity embeddings during training.
+        gate_residual (bool): Whether to use gated residual connections.
     """
 
     def __init__(
@@ -130,7 +131,7 @@ class LiteralEmbeddingsClifford(nn.Module):
             embedding_dim=self.embedding_dim,
         )
         # Clifford algebra parameters
-        self.g = [-1, -1]
+        self.g = [-1]
         self.n_blades = 2 ** len(self.g)  # 4 blades for 2D Clifford algebra
         self.in_channels = (
             self.embedding_dim * 2 // self.n_blades
@@ -140,18 +141,26 @@ class LiteralEmbeddingsClifford(nn.Module):
         self.clif_1 = CliffordLinear(
             g=self.g,
             in_channels=self.in_channels,
-            out_channels=self.hidden_dim,
+            out_channels=self.in_channels,
             bias=True,
         )
         self.dropout = nn.Dropout(p=dropout)
         self.out = CliffordLinear(
             g=self.g,
-            in_channels=self.hidden_dim,
+            in_channels=self.in_channels,
             out_channels=1,  # Output a single scalar prediction
             bias=True,
         )
-        self.layer_norm = nn.LayerNorm([self.hidden_dim, self.n_blades])
-        self.final_proj = nn.Linear(1 * self.n_blades, 1)
+        self.layer_norm = nn.LayerNorm([self.in_channels, self.n_blades])
+        self.final_proj = nn.Linear(self.hidden_dim, 1)
+        
+        # Gated residual layer at blade level
+        self.gated_residual_proj = CliffordLinear(
+            g=self.g,
+            in_channels=self.in_channels * 2,  # For concatenated features
+            out_channels=self.in_channels * 2,  # Value and gate components
+            bias=True,
+        )
 
     def forward(self, entity_idx, attr_idx):
         """
@@ -173,12 +182,25 @@ class LiteralEmbeddingsClifford(nn.Module):
         x = tuple_emb.view(-1, self.in_channels, self.n_blades)
         
         # Clifford linear transformation with layer norm and activation
-        z = F.tanh(self.layer_norm(self.clif_1(x)))
+        z = self.dropout(F.relu(self.layer_norm(self.clif_1(x))))
+
+        if self.gate_residual:
+            # Blade-level gated residual logic
+            # Concatenate z and x at the channel dimension for blade-level gating
+            concat_features = torch.cat((z, x), dim=1)  # [batch, 2*in_channels, n_blades]
+            
+            # Apply Clifford gating transformation
+            gated_output = self.gated_residual_proj(concat_features)  # [batch, 2*in_channels, n_blades]
+            
+            # Split into value and gate components at channel dimension
+            value, gate = gated_output.chunk(2, dim=1)  # Each: [batch, in_channels, n_blades]
+            
+            # Apply sigmoid gating at blade level
+            z = value * torch.sigmoid(gate)  # [batch, in_channels, n_blades]
         
-        # Output layer - extract scalar component and flatten to 1D
-        out = self.out(z)[:, :, 0].flatten()  # [batch]
+        out = self.out(z)
+        return out.mean(dim=-1).flatten()  # Average over the blades and flatten to 1D
         
-        return out
     
     @property
     def device(self):

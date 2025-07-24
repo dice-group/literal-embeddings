@@ -71,6 +71,7 @@ def train_literals(args):
                 embedding_dims=kge_model.embedding_dim,
                 entity_embeddings=kge_model.entity_embeddings,
                 freeze_entity_embeddings=args.freeze_entity_embeddings,
+                gate_residual=args.gate_residual,
                 dropout=getattr(args, 'dropout', 0.15),
             )
         elif args.literal_model == 'mlp':
