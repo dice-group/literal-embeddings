@@ -8,6 +8,7 @@ def parse_args():
     parser.add_argument("--num_iterations", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--lr_decay", type=float, default=0.95, help="Exponential learning rate decay factor per epoch")
     parser.add_argument("--dr", type=float, default=1.0)
     parser.add_argument("--embedding_dim", type=int, default=128, help="Embedding dimension for entities, relations, and embedding shape")
     parser.add_argument("--cuda", type=bool, default=True)

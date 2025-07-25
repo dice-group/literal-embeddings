@@ -51,7 +51,7 @@ def build_er_vocab(triples, entity2idx, relation2idx):
 def main(args):
     """Main training function"""
     data_dir = f"{args.input}/{args.dataset}/"
-    exp_dir = f"Experiments/{args.dataset}_{args.model}/"
+    exp_dir = f"Experiments/best_configs/try/{args.dataset}_{args.model}/"
     if args.swa:
         exp_dir = exp_dir + 'swa'
     if args.adaptive_swa:
@@ -112,7 +112,8 @@ def main(args):
     lit_model = LitModel(
         args.model, train_dataset, args.edim, args.rdim, kwargs,
         args.lr, args.label_smoothing, model_mapping=model_mapping,
-        er_vocab=er_vocab, evaluator=evaluator, exp_dir = exp_dir   
+        er_vocab=er_vocab, evaluator=evaluator, exp_dir = exp_dir,
+        lr_decay=args.lr_decay   
     )
     
     # Setup callbacks

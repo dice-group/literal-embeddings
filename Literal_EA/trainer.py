@@ -1,18 +1,20 @@
 import pytorch_lightning as pl
 import torch
+from torch.optim.lr_scheduler import ExponentialLR
 from model import *
 import json
 
 class LitModel(pl.LightningModule):
     """PyTorch Lightning module for knowledge graph embedding models"""
     def __init__(self, model_name, d, ent_vec_dim, rel_vec_dim, kwargs, lr, label_smoothing, model_mapping,
-                 evaluator = None, er_vocab=None, exp_dir=None):
+                 evaluator = None, er_vocab=None, exp_dir=None, lr_decay=0.95):
         super().__init__()
         self.save_hyperparameters()
         self.model_name = model_name
         self.model_mapping = model_mapping
         self.model = model_mapping[model_name](d, ent_vec_dim, rel_vec_dim, **kwargs)
         self.lr = lr
+        self.lr_decay = lr_decay
         self.label_smoothing = label_smoothing
         self.num_entities = len(d.entities)
         self.er_vocab = er_vocab
@@ -44,8 +46,17 @@ class LitModel(pl.LightningModule):
         return loss
     
     def configure_optimizers(self):
-        """Configure Adam optimizer"""
-        return torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        """Configure Adam optimizer with exponential learning rate decay"""
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        scheduler = ExponentialLR(optimizer, gamma=self.lr_decay)
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+            }
+        }
     
     def on_fit_end(self):
         """Evaluate model and save results after training"""
