@@ -3,7 +3,7 @@ import argparse
 def parse_args():
     """Parse command line arguments for model training"""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="Family")
+    parser.add_argument("--dataset", type=str, default="YAGO15K")
     parser.add_argument("--model", type=str, default="conve_literal")
     parser.add_argument("--num_iterations", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=1024)

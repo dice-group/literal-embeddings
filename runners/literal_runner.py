@@ -4,9 +4,9 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from src.dataset import LiteralDataset
-from src.model import LiteralEmbeddings, LiteralEmbeddingsClifford
+from src.model import LiteralEmbeddings , LiteralEmbeddingsClifford
 from src.static_funcs import (evaluate_lit_preds, load_model_components,
-                              save_literal_experiments, KGEModelComponents)
+                              save_literal_experiments)
 from src.trainer_literal import train_literal_model
 from dicee.static_funcs import save_checkpoint_model
 from src.static_funcs import evaluate_link_prediction_performance_with_reciprocals
@@ -34,7 +34,7 @@ def train_literals(args):
     args.embedding_dim = model_components.embedding_dim
     args.model = model_components.model_name
     dataset_name = os.path.basename(args.dataset_dir)
-
+    
     print(f"Training Literal Embedding model using pre-trained KGE model at {args.pretrained_kge_path}")
     print(f"Using literal model type: {args.literal_model}")
 
@@ -72,6 +72,7 @@ def train_literals(args):
                 entity_embeddings=kge_model.entity_embeddings,
                 freeze_entity_embeddings=args.freeze_entity_embeddings,
                 gate_residual=args.gate_residual,
+                use_clifford_attention=args.use_clifford_attention,
                 dropout=getattr(args, 'dropout', 0.15),
             )
         elif args.literal_model == 'mlp':

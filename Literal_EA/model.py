@@ -10,7 +10,7 @@ def load_num_lit(ent2idx, dataset, wrap=True):
     numerical_literals = np.zeros([len(ent2idx), len(rel2idx)], dtype=np.float32)
     for i, (s, p, lit) in enumerate(df.values):
         try:
-            numerical_literals[ent2idx[s.lower()], rel2idx[p]] = lit
+            numerical_literals[ent2idx[s], rel2idx[p]] = lit
         except KeyError:
             continue
     max_lit, min_lit = np.max(numerical_literals, axis=0), np.min(numerical_literals, axis=0)

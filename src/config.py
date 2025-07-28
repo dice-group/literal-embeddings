@@ -399,6 +399,12 @@ def get_default_arguments():
         help="Use gate residual connections in Literal Embedding Model.",
     )
     parser.add_argument(
+        "--use_clifford_attention",
+        action="store_true",
+        default=True,
+        help="Use Clifford attention mechanism in Clifford Literal Embedding Model.",
+    )
+    parser.add_argument(
         "--multi_regression",
         action="store_true",
         help="Perform multi-output regression for Literal Embedding model.",

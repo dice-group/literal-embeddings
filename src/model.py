@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
 
+from src.clifford_attention import GeometricCliffordAttention
+
 
 class LiteralEmbeddings(nn.Module):
     """
@@ -112,6 +114,7 @@ class LiteralEmbeddingsClifford(nn.Module):
         dropout: float = 0.15,
         freeze_entity_embeddings=True,
         gate_residual=False,
+        use_clifford_attention=True,
     ):
         super().__init__()
         self.embedding_dim = embedding_dims
@@ -119,6 +122,7 @@ class LiteralEmbeddingsClifford(nn.Module):
         self.hidden_dim = embedding_dims * 2  # Combined entity + attribute embeddings
         self.freeze_entity_embeddings = freeze_entity_embeddings
         self.gate_residual = gate_residual
+        self.use_clifford_attention = use_clifford_attention
 
         # Use pre-trained entity embeddings
         self.entity_embeddings = nn.Embedding.from_pretrained(
@@ -130,6 +134,7 @@ class LiteralEmbeddingsClifford(nn.Module):
             num_embeddings=num_of_data_properties,
             embedding_dim=self.embedding_dim,
         )
+        
         # Clifford algebra parameters
         self.g = [-1]
         self.n_blades = 2 ** len(self.g)  # 4 blades for 2D Clifford algebra
@@ -151,6 +156,18 @@ class LiteralEmbeddingsClifford(nn.Module):
             out_channels=1,  # Output a single scalar prediction
             bias=True,
         )
+        
+        # Conditionally initialize Clifford attention
+        if self.use_clifford_attention:
+            self.clifford_attention = GeometricCliffordAttention(
+                n_blades=self.n_blades,  # Each multivector token has n_blades components
+                g=self.g,
+                d_model=self.n_blades,  # d_model should match n_blades for token-based approach
+                num_heads=2  # Use fewer heads since d_model = n_blades
+            )
+        else:
+            self.clifford_attention = None
+            
         self.layer_norm = nn.LayerNorm([self.in_channels, self.n_blades])
         self.final_proj = nn.Linear(self.hidden_dim, 1)
         
@@ -183,6 +200,14 @@ class LiteralEmbeddingsClifford(nn.Module):
         
         # Clifford linear transformation with layer norm and activation
         z = self.dropout(F.relu(self.layer_norm(self.clif_1(x))))
+        
+        # Conditionally apply Clifford attention mechanism
+        if self.use_clifford_attention:
+            # Each multivector is treated as a token: [batch, in_channels, n_blades]
+            # where in_channels is the sequence length (number of multivector tokens)
+            # and n_blades is the feature dimension of each token
+            attended_z, attention_weights = self.clifford_attention(z)  # z: [batch, in_channels, n_blades]
+            z = attended_z  # [batch, in_channels, n_blades]
 
         if self.gate_residual:
             # Blade-level gated residual logic
@@ -197,9 +222,13 @@ class LiteralEmbeddingsClifford(nn.Module):
             
             # Apply sigmoid gating at blade level
             z = value * torch.sigmoid(gate)  # [batch, in_channels, n_blades]
+        else:
+            # Simple residual connection
+            z = z + x  # [batch, in_channels, n_blades]
         
         out = self.out(z)
-        return out.mean(dim=-1).flatten()  # Average over the blades and flatten to 1D
+        return out[:,:,0].flatten()
+        # return out.mean(dim=-1).flatten()  # Average over the blades and flatten to 1D
         
     
     @property

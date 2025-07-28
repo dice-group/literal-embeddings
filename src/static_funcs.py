@@ -308,7 +308,7 @@ def load_model_components(kge_path: str) -> Optional[KGEModelComponents]:
                 config = json.load(f)
 
             weights = torch.load(model_path, map_location="cpu")
-
+            
             kge_model, _ = intialize_model(config, 0)
             kge_model.load_state_dict(weights)
             print("Manual KGE load successful!")
