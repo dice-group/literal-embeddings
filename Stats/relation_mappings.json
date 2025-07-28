@@ -1,0 +1,50 @@
+{
+  "rel_map_db15k": {
+    "birthDate": "birthDate",
+    "completionDate": "completionDate",
+    "deathDate": "deathDate",
+    "formationDate": "formationDate",
+    "foundingDate": "foundingDate",
+    "height": "height",
+    "releaseDate": "releaseDate",
+    "wgs84_pos#lat": "latitude",
+    "wgs84_pos#long": "longitude"
+  },
+  "rel_map_mutag": {
+    "http://dl-learner.org/mutagenesis#act": "mutagenesis\\#act",
+    "http://dl-learner.org/mutagenesis#charge": "mutagenesis\\#charge",
+    "http://dl-learner.org/mutagenesis#logp": "mutagenesis\\#logp",
+    "http://dl-learner.org/mutagenesis#lumo": "mutagenesis\\#lumo"
+  },
+  "rel_map_fb15k": {
+    "people.person.date_of_birth": "date\\_of\\_birth",
+    "people.deceased_person.date_of_death": "date\\_of\\_death",
+    "film.film.initial_release_date": "release\\_date",
+    "organization.organization.date_founded": "org.date\\_founded",
+    "location.dated_location.date_founded": "loc.date\\_founded",
+    "location.geocode.latitude": "latitude",
+    "location.geocode.longitude": "longitude",
+    "location.location.area": "loc.area",
+    "topic_server.population_number": "pop.\\_number",
+    "people.person.height_meters": "height\\_meters",
+    "people.person.weight_kg": "weight\\_kg"
+  },
+  "rel_map_yago15k": {
+    "diedOnDate": "diedOnDate",
+    "happenedOnDate": "happenedOnDate",
+    "hasLatitude": "Latitude",
+    "hasLongitude": "Longitude",
+    "wasBornOnDate": "BornOnDate",
+    "wasCreatedOnDate": "CreatedOnDate",
+    "wasDestroyedOnDate": "DestroyedOnDate"
+  },
+  "rel_map_yago15k_short": {
+    "diedOnDate": "diedOnDate",
+    "happenedOnDate": "happenedOnDate",
+    "hasLatitude": "Latitude",
+    "hasLongitude": "Longitude",
+    "wasBornOnDate": "BornOnDate",
+    "wasCreatedOnDate": "CreatedOn",
+    "wasDestroyedOnDate": "DestroyedOn"
+  }
+}
