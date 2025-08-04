@@ -20,7 +20,6 @@ from analysis.baselines import evaluate_LOCAL_GLOBAL
 class TestGlobalLocalBaselines:
     """Test suite for GLOBAL and LOCAL baseline calculations."""
     
-    @pytest.mark.unit
     @pytest.mark.filterwarnings('ignore::UserWarning')
     def test_simple_global_local_calculation(self):
         """Test basic GLOBAL and LOCAL calculation with known data."""
@@ -67,7 +66,6 @@ class TestGlobalLocalBaselines:
         assert result["RMSE_GLOBAL"].iloc[0] >= result["MAE_GLOBAL"].iloc[0]
         assert result["RMSE_LOCAL"].iloc[0] >= result["MAE_LOCAL"].iloc[0]
     
-    @pytest.mark.unit
     @pytest.mark.filterwarnings('ignore::UserWarning')
     def test_global_average_calculation(self):
         """Test that global averages are calculated correctly."""
@@ -96,7 +94,6 @@ class TestGlobalLocalBaselines:
         assert abs(actual_global - expected_global) < 1e-10, \
             f"Expected global average {expected_global}, got {actual_global}"
 
-    @pytest.mark.unit
     @pytest.mark.filterwarnings('ignore::UserWarning')
     def test_empty_data_handling(self):
         """Test handling of edge cases like empty data."""
@@ -108,7 +105,6 @@ class TestGlobalLocalBaselines:
         result = evaluate_LOCAL_GLOBAL(entity_triples, train_data, test_data.copy())
         assert len(result) == 0
 
-    @pytest.mark.unit
     @pytest.mark.filterwarnings('ignore::UserWarning')
     def test_missing_relations(self):
         """Test behavior when test data has relations not in training data."""
@@ -136,7 +132,6 @@ class TestGlobalLocalBaselines:
         for col in ["MAE_GLOBAL", "RMSE_GLOBAL", "MAE_LOCAL", "RMSE_LOCAL"]:
             assert np.isfinite(result[col].iloc[0]), f"{col} should be finite for known relations"
 
-    @pytest.mark.unit
     @pytest.mark.filterwarnings('ignore::UserWarning')
     def test_unknown_relations_handling(self):
         """Test that unknown relations are handled gracefully."""
@@ -164,12 +159,3 @@ class TestGlobalLocalBaselines:
         except (ValueError, KeyError) as e:
             # It's acceptable for the function to fail with unknown relations
             assert "NaN" in str(e) or "unknown" in str(e).lower()
-
-# For manual testing and development
-if __name__ == "__main__":
-    # This allows running the test file directly for development
-    # Use: python test_baselines.py
-    import pytest
-    
-    # Run pytest on this file specifically
-    pytest.main([__file__, "-v", "--tb=short"])

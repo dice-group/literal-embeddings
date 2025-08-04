@@ -1,21 +1,9 @@
 import pytest
-import os
-import tempfile
-import torch
-import pandas as pd
-import shutil
-from unittest.mock import patch, MagicMock
-from dicee.config import Namespace
 from dicee.executer import Execute
-from dicee.knowledge_graph_embeddings import KGE
 from src.config import get_default_arguments
 from runners.literal_runner import train_literals
-from src.static_funcs import load_model_components
-
-
 class TestLiteralRunner:
     """Regression tests for the literal runner train_literals method."""
-
     @pytest.fixture(scope="class")
     def pretrained_kge_model(self):
         """Setup a pre-trained KGE model for literal training."""

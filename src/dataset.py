@@ -50,125 +50,6 @@ class LiteralDataset(Dataset):
 
         self._load_data()
 
-    def _apply_label_perturbation(self, df):
-        """
-        Apply random perturbations to normalized training labels.
-        
-        Args:
-            df: DataFrame with training data (must have 'tail_norm' column)
-            
-        Returns:
-            DataFrame with perturbed normalized labels
-        """
-        if self.label_perturbation is None or self.perturbation_ratio <= 0:
-            print("No label perturbation applied.")
-            return df
-        
-        # Set random seed for reproducibility
-        np.random.seed(self.random_seed)
-        
-        # Create a copy to avoid modifying original data
-        df_perturbed = df.copy()
-        
-        # Determine which labels to perturb
-        num_samples = len(df_perturbed)
-        num_to_perturb = int(num_samples * self.perturbation_ratio)
-        
-        if num_to_perturb == 0:
-            print(f"Perturbation ratio {self.perturbation_ratio} too small, no labels perturbed.")
-            return df_perturbed
-        
-        # Randomly select indices to perturb
-        perturb_indices = np.random.choice(num_samples, size=num_to_perturb, replace=False)
-        self.perturbed_indices = set(perturb_indices)
-        
-        # Work with normalized values
-        original_normalized = df_perturbed.loc[perturb_indices, 'tail_norm'].values
-        
-        if self.label_perturbation == "gaussian":
-            # Add Gaussian noise to normalized values
-            noise = np.random.normal(0, self.perturbation_noise_std, size=len(perturb_indices))
-            perturbed_normalized = original_normalized + noise
-            
-        elif self.label_perturbation == "uniform":
-            # Add uniform noise to normalized values
-            noise = np.random.uniform(-self.perturbation_noise_std, self.perturbation_noise_std, 
-                                    size=len(perturb_indices))
-            perturbed_normalized = original_normalized + noise
-            
-        elif self.label_perturbation == "label_flip":
-            # Flip normalized labels within each relation
-            perturbed_normalized = []
-            for idx in perturb_indices:
-                relation = df_perturbed.loc[idx, 'relation']
-                relation_data = df_perturbed[df_perturbed['relation'] == relation]['tail_norm']
-                
-                # Sample a random normalized value from the same relation
-                if len(relation_data) > 1:
-                    other_values = relation_data[relation_data.index != idx].values
-                    if len(other_values) > 0:
-                        perturbed_val = np.random.choice(other_values)
-                    else:
-                        perturbed_val = original_normalized[perturb_indices.tolist().index(idx)]
-                else:
-                    # If only one value for this relation, add small noise
-                    perturbed_val = original_normalized[perturb_indices.tolist().index(idx)] + \
-                                  np.random.normal(0, 0.01)
-                perturbed_normalized.append(perturbed_val)
-            perturbed_normalized = np.array(perturbed_normalized)
-            
-        elif self.label_perturbation == "scaled_noise":
-            # Scale normalized values by noise factors
-            noise_factors = np.random.normal(1.0, self.perturbation_noise_std, size=len(perturb_indices))
-            perturbed_normalized = original_normalized * noise_factors
-            
-        elif self.label_perturbation == "dropout":
-            # Set some normalized values to zero (simulating missing data)
-            perturbed_normalized = original_normalized.copy()
-            dropout_mask = np.random.random(len(perturb_indices)) < self.perturbation_noise_std
-            perturbed_normalized[dropout_mask] = 0.0
-            
-        elif self.label_perturbation == "quantization":
-            # Quantize normalized values (simulating reduced precision)
-            # perturbation_noise_std controls number of quantization levels
-            num_levels = max(2, int(1.0 / self.perturbation_noise_std))
-            perturbed_normalized = np.round(original_normalized * num_levels) / num_levels
-            
-        else:
-            raise ValueError(f"Unknown label perturbation type: {self.label_perturbation}. "
-                           f"Supported: 'gaussian', 'uniform', 'label_flip', 'scaled_noise', 'dropout', 'quantization'")
-        
-        # Apply perturbations to normalized values
-        df_perturbed.loc[perturb_indices, 'tail_norm'] = perturbed_normalized
-        
-        # Calculate perturbation statistics
-        absolute_changes = np.abs(perturbed_normalized - original_normalized)
-        relative_changes = absolute_changes / (np.abs(original_normalized) + 1e-8)
-        
-        print(f"Applied {self.label_perturbation} perturbation to {num_to_perturb}/{num_samples} normalized labels "
-              f"({self.perturbation_ratio*100:.1f}%)")
-        print(f"  Perturbation stats on normalized values:")
-        print(f"    Mean absolute change: {np.mean(absolute_changes):.4f}")
-        print(f"    Max absolute change: {np.max(absolute_changes):.4f}")
-        print(f"    Mean relative change: {np.mean(relative_changes):.4f}")
-        print(f"    Max relative change: {np.max(relative_changes):.4f}")
-        print(f"    Normalized value range after perturbation: [{np.min(perturbed_normalized):.3f}, {np.max(perturbed_normalized):.3f}]")
-        
-        # Store perturbation info for analysis
-        self.perturbation_stats = {
-            'num_perturbed': num_to_perturb,
-            'perturbation_type': self.label_perturbation,
-            'mean_absolute_change': np.mean(absolute_changes),
-            'max_absolute_change': np.max(absolute_changes),
-            'mean_relative_change': np.mean(relative_changes),
-            'max_relative_change': np.max(relative_changes),
-            'perturbed_indices': list(perturb_indices),
-            'original_norm_range': [np.min(original_normalized), np.max(original_normalized)],
-            'perturbed_norm_range': [np.min(perturbed_normalized), np.max(perturbed_normalized)]
-        }
-        
-        return df_perturbed
-
     def _load_data(self):
         # Load mapping from train
         train_path = self.file_paths["train"]
@@ -214,7 +95,6 @@ class LiteralDataset(Dataset):
         
         # Apply normalization FIRST, then perturbation
         train_df = self._apply_normalization(train_df)
-        train_df = self._apply_label_perturbation(train_df)
 
         self.triples = torch.tensor(
             train_df[["head_idx", "rel_idx"]].values, dtype=torch.long
@@ -241,40 +121,6 @@ class LiteralDataset(Dataset):
                 lambda x: (x - x.min()) / (x.max() - x.min())
             )
             self.normalization_params["type"] = "min-max"
-
-        elif self.normalization_type == "log":
-            # Apply log transformation (add small epsilon to avoid log(0))
-            epsilon = 1e-6
-            df["tail_norm"] = df["tail"].apply(lambda x: np.log(max(x, epsilon)))
-            self.normalization_params["type"] = "log"
-            self.normalization_params["epsilon"] = epsilon
-            print(f"Applied log transformation with epsilon={epsilon}")
-
-        elif self.normalization_type == "log-z-norm":
-            # Apply log transformation followed by z-normalization
-            epsilon = 1e-6
-            df["tail_log"] = df["tail"].apply(lambda x: np.log(max(x, epsilon)))
-            stats = df.groupby("relation")["tail_log"].agg(["mean", "std"])
-            self.normalization_params = stats.to_dict(orient="index")
-            df["tail_norm"] = df.groupby("relation")["tail_log"].transform(
-                lambda x: (x - x.mean()) / x.std()
-            )
-            self.normalization_params["type"] = "log-z-norm"
-            self.normalization_params["epsilon"] = epsilon
-            print(f"Applied log transformation + z-normalization with epsilon={epsilon}")
-
-        elif self.normalization_type == "log-min-max":
-            # Apply log transformation followed by min-max normalization
-            epsilon = 1e-6
-            df["tail_log"] = df["tail"].apply(lambda x: np.log(max(x, epsilon)))
-            stats = df.groupby("relation")["tail_log"].agg(["min", "max"])
-            self.normalization_params = stats.to_dict(orient="index")
-            df["tail_norm"] = df.groupby("relation")["tail_log"].transform(
-                lambda x: (x - x.min()) / (x.max() - x.min())
-            )
-            self.normalization_params["type"] = "log-min-max"
-            self.normalization_params["epsilon"] = epsilon
-            print(f"Applied log transformation + min-max normalization with epsilon={epsilon}")
 
         else:
             print(" No normalization applied.")
@@ -316,12 +162,9 @@ class LiteralDataset(Dataset):
         # Filter out relations not in training set (important when using selected_attributes)
         df = df.dropna(subset=['rel_idx'])
 
-        if norm:
-            df = self._apply_normalization(df)
-
         return df
 
-    def get_batch(self, entity_indices, multi_regression=False, random_seed=None):
+    def get_batch(self, entity_indices, multi_regression=False):
         # Combine data and labels into one tensor of shape [n, d+1]
         combined = torch.cat([self.triples, self.tails_norm.unsqueeze(1)], dim=1)
 
@@ -329,24 +172,8 @@ class LiteralDataset(Dataset):
         mask = torch.isin(combined[:, 0], entity_indices)
         filtered = combined[mask]
 
-        if random_seed is not None:
-            # Use the provided random seed to shuffle the filtered triples
-            torch.manual_seed(random_seed)
-            shuffled = filtered[torch.randperm(filtered.size(0))]
-
-            # Group by first column (entity indices) and select the first row of each group
-            values = shuffled[:, 0]
-            unique_vals, inverse_indices = torch.unique(values, return_inverse=True)
-            first_indices = torch.stack(
-                [
-                    (inverse_indices == i).nonzero(as_tuple=True)[0][0]
-                    for i in range(len(unique_vals))
-                ]
-            )
-            selected_triples = shuffled[first_indices]
-        else:
-            # Select all triples for each entity
-            selected_triples = filtered
+        # Select all triples for each entity (no random sampling)
+        selected_triples = filtered
 
         # Extract entity indices, relation indices, and labels
         ent_ids = selected_triples[:, 0].long()
@@ -411,13 +238,6 @@ class LiteralDataset(Dataset):
         
         return stats
     
-    def get_perturbation_info(self):
-        """Get information about applied label perturbations"""
-        if hasattr(self, 'perturbation_stats'):
-            return self.perturbation_stats
-        else:
-            return {"message": "No perturbations were applied"}
-    
     @staticmethod
     def denormalize( preds_norm, attributes, normalization_params) -> np.ndarray:
         """Denormalizes the predictions based on the normalization type.
@@ -443,29 +263,11 @@ class LiteralDataset(Dataset):
             maxs = np.array([normalization_params[i]["max"] for i in attributes])
             return preds_norm * (maxs - mins) + mins
 
-        elif normalization_params["type"] == "log":
-            # Reverse log transformation: exp(log_values)
-            return np.exp(preds_norm)
-
-        elif normalization_params["type"] == "log-z-norm":
-            # Reverse z-norm first, then reverse log transformation
-            means = np.array([normalization_params[i]["mean"] for i in attributes])
-            stds = np.array([normalization_params[i]["std"] for i in attributes])
-            log_values = preds_norm * stds + means
-            return np.exp(log_values)
-
-        elif normalization_params["type"] == "log-min-max":
-            # Reverse min-max first, then reverse log transformation
-            mins = np.array([normalization_params[i]["min"] for i in attributes])
-            maxs = np.array([normalization_params[i]["max"] for i in attributes])
-            log_values = preds_norm * (maxs - mins) + mins
-            return np.exp(log_values)
-
         elif normalization_params["type"] is None:
             return  preds_norm  # No normalization applied, return as is
 
         else:
             raise ValueError(
                 f"Unsupported normalization type: {normalization_params['type']}. "
-                f"Supported types: 'z-norm', 'min-max', 'log', 'log-z-norm', 'log-min-max', or None."
+                f"Supported types: 'z-norm', 'min-max', or None."
             )

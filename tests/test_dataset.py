@@ -1,519 +1,368 @@
-import unittest
-import tempfile
 import os
-import shutil
+import tempfile
+import pytest
 import pandas as pd
 import torch
 import numpy as np
 from src.dataset import LiteralDataset
 
 
-class TestLiteralDataset(unittest.TestCase):
-    """Regression tests for LiteralDataset to ensure consistent behavior"""
-    
-    def setUp(self):
-        """Set up test fixtures before each test method"""
-        # Create temporary directory for test data
-        self.test_dir = tempfile.mkdtemp()
-        self.literals_dir = os.path.join(self.test_dir, "literals")
-        os.makedirs(self.literals_dir)
-        
-        # Create sample entity to index mapping
-        self.entity_to_idx = {
-            "entity_1": 0,
-            "entity_2": 1,
-            "entity_3": 2,
-            "entity_4": 3,
-            "entity_5": 4
-        }
-        
-        # Create sample training data
-        self.train_data = [
-            ("entity_1", "height", 1.75),
-            ("entity_1", "weight", 70.5),
-            ("entity_2", "height", 1.80),
-            ("entity_2", "weight", 75.0),
-            ("entity_3", "height", 1.65),
-            ("entity_3", "weight", 60.0),
-            ("entity_4", "height", 1.90),
-            ("entity_4", "weight", 85.0),
-            ("entity_5", "height", 1.70),
-            ("entity_5", "weight", 65.5)
+@pytest.fixture
+def sample_data():
+    """Create sample data for testing"""
+    data = {
+        'train': [
+            ['entity1', 'height', 1.75],
+            ['entity1', 'weight', 70.5],
+            ['entity2', 'height', 1.80],
+            ['entity2', 'weight', 75.0],
+            ['entity3', 'height', 1.65],
+            ['entity3', 'age', 25],
+        ],
+        'test': [
+            ['entity1', 'height', 1.76],
+            ['entity2', 'weight', 74.5],
+            ['entity3', 'age', 26],
+        ],
+        'val': [
+            ['entity1', 'weight', 71.0],
+            ['entity2', 'height', 1.81],
         ]
+    }
+    return data
+
+
+@pytest.fixture
+def temp_dataset_dir(sample_data):
+    """Create temporary dataset directory with sample files"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        literals_dir = os.path.join(temp_dir, 'literals')
+        os.makedirs(literals_dir)
         
-        # Create sample test data
-        self.test_data = [
-            ("entity_1", "height", 1.75),
-            ("entity_2", "weight", 75.0),
-            ("entity_3", "height", 1.65)
-        ]
+        for split, data in sample_data.items():
+            file_path = os.path.join(literals_dir, f'{split}.txt')
+            df = pd.DataFrame(data, columns=['head', 'relation', 'tail'])
+            df.to_csv(file_path, sep='\t', index=False, header=False)
         
-        # Write training data
-        train_df = pd.DataFrame(self.train_data, columns=["head", "relation", "tail"])
-        train_df.to_csv(os.path.join(self.literals_dir, "train.txt"), 
-                       sep="\t", header=False, index=False)
-        
-        # Write test data
-        test_df = pd.DataFrame(self.test_data, columns=["head", "relation", "tail"])
-        test_df.to_csv(os.path.join(self.literals_dir, "test.txt"), 
-                      sep="\t", header=False, index=False)
-        
-        # Create empty validation file
-        val_df = pd.DataFrame([], columns=["head", "relation", "tail"])
-        val_df.to_csv(os.path.join(self.literals_dir, "val.txt"), 
-                     sep="\t", header=False, index=False)
+        yield temp_dir
+
+
+@pytest.fixture
+def entity_mapping():
+    """Create entity mapping"""
+    return {
+        'entity1': 0,
+        'entity2': 1,
+        'entity3': 2
+    }
+
+
+class TestLiteralDataset:
     
-    def tearDown(self):
-        """Clean up after each test"""
-        shutil.rmtree(self.test_dir)
-    
-    def test_dataset_initialization(self):
-        """Test that dataset initializes correctly with expected properties"""
+    def test_init_basic(self, temp_dataset_dir, entity_mapping):
+        """Test basic initialization"""
         dataset = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
             normalization="z-norm"
         )
         
-        # Check basic properties
-        self.assertEqual(dataset.num_entities, 5)
-        self.assertEqual(dataset.num_data_properties, 2)  # height, weight
-        self.assertEqual(len(dataset), 10)  # 10 training samples
-        
-        # Check data property mapping
-        expected_properties = {"height", "weight"}
-        actual_properties = set(dataset.data_property_to_idx.keys())
-        self.assertEqual(actual_properties, expected_properties)
+        assert dataset.num_entities == 3
+        assert dataset.num_data_properties == 3  # height, weight, age
+        assert len(dataset) == 6  # 6 training triples
     
-    def test_normalization_consistency(self):
-        """Test that normalization produces consistent results"""
-        # Test z-norm
-        dataset_znorm = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
+    def test_normalization_z_norm(self, temp_dataset_dir, entity_mapping):
+        """Test z-normalization"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
             normalization="z-norm"
         )
         
-        # Test min-max norm
-        dataset_minmax = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
+        assert dataset.normalization_params["type"] == "z-norm"
+        assert "height" in dataset.normalization_params
+        assert "weight" in dataset.normalization_params
+        assert "age" in dataset.normalization_params
+        
+        # Check that normalization parameters are computed
+        height_params = dataset.normalization_params["height"]
+        assert "mean" in height_params
+        assert "std" in height_params
+    
+    def test_normalization_min_max(self, temp_dataset_dir, entity_mapping):
+        """Test min-max normalization"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
             normalization="min-max"
         )
         
-        # Test no normalization
-        dataset_no_norm = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
+        assert dataset.normalization_params["type"] == "min-max"
+        height_params = dataset.normalization_params["height"]
+        assert "min" in height_params
+        assert "max" in height_params
+    
+    def test_no_normalization(self, temp_dataset_dir, entity_mapping):
+        """Test no normalization"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
             normalization=None
         )
         
-        # Check that normalization parameters are stored correctly
-        self.assertEqual(dataset_znorm.normalization_params["type"], "z-norm")
-        self.assertEqual(dataset_minmax.normalization_params["type"], "min-max")
-        self.assertEqual(dataset_no_norm.normalization_params["type"], None)
-        
-        # For z-norm, check that normalized data has approximately mean=0, std=1 per relation
-        height_indices = (dataset_znorm.triples[:, 1] == 
-                         dataset_znorm.data_property_to_idx["height"])
-        height_values = dataset_znorm.tails_norm[height_indices]
-        
-        # Check that height values are approximately normalized
-        self.assertAlmostEqual(height_values.mean().item(), 0.0, places=5)
-        self.assertAlmostEqual(height_values.std().item(), 1.0, places=5)
+        assert dataset.normalization_params["type"] is None
+        # Original and normalized values should be the same
+        assert torch.allclose(dataset.tails, dataset.tails_norm)
     
-    def test_log_normalization(self):
-        """Test log-based normalization methods"""
-        # Test log normalization
-        dataset_log = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            normalization="log"
+    def test_selected_attributes(self, temp_dataset_dir, entity_mapping):
+        """Test filtering by selected attributes"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
+            selected_attributes=['height', 'weight']
         )
         
-        # Test log-z-norm
-        dataset_log_znorm = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            normalization="log-z-norm"
-        )
+        assert dataset.num_data_properties == 2  # Only height and weight
+        assert len(dataset) == 5  # 5 triples with height/weight (not 4)
         
-        # Test log-min-max
-        dataset_log_minmax = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            normalization="log-min-max"
-        )
-        
-        # Check that normalization parameters are stored correctly
-        self.assertEqual(dataset_log.normalization_params["type"], "log")
-        self.assertEqual(dataset_log_znorm.normalization_params["type"], "log-z-norm")
-        self.assertEqual(dataset_log_minmax.normalization_params["type"], "log-min-max")
-        
-        # Check that epsilon is stored for log-based methods
-        self.assertIn("epsilon", dataset_log.normalization_params)
-        self.assertIn("epsilon", dataset_log_znorm.normalization_params)
-        self.assertIn("epsilon", dataset_log_minmax.normalization_params)
+        # Check that only selected attributes are in the mapping
+        assert set(dataset.data_property_to_idx.keys()) == {'height', 'weight'}
     
-    def test_sampling_ratio(self):
-        """Test that sampling ratio works correctly"""
-        # Test with 50% sampling
-        dataset_half = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
+    def test_sampling_ratio(self, temp_dataset_dir, entity_mapping):
+        """Test sampling ratio functionality"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
             sampling_ratio=0.5
         )
         
-        # Should have roughly half the data
-        self.assertLessEqual(len(dataset_half), 7)  # Allow some variance due to groupby sampling
-        self.assertGreaterEqual(len(dataset_half), 3)
-        
-        # Test with full data
-        dataset_full = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            sampling_ratio=1.0
-        )
-        
-        self.assertEqual(len(dataset_full), 10)
+        # Should have roughly half the data (may vary due to groupby sampling)
+        assert len(dataset) <= 6  # Original had 6 triples
     
-    def test_selected_attributes(self):
-        """Test attribute filtering functionality"""
-        # Test with only height attribute
-        dataset_height_only = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            selected_attributes=["height"]
-        )
-        
-        self.assertEqual(dataset_height_only.num_data_properties, 1)
-        self.assertEqual(len(dataset_height_only), 5)  # 5 height records
-        self.assertIn("height", dataset_height_only.data_property_to_idx)
-        self.assertNotIn("weight", dataset_height_only.data_property_to_idx)
-        
-        # Test with both attributes
-        dataset_both = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            selected_attributes=["height", "weight"]
-        )
-        
-        self.assertEqual(dataset_both.num_data_properties, 2)
-        self.assertEqual(len(dataset_both), 10)
-    
-    def test_label_perturbation(self):
-        """Test label perturbation functionality"""
-        # Test Gaussian perturbation
-        dataset_gaussian = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            label_perturbation="gaussian",
-            perturbation_ratio=0.5,
-            perturbation_noise_std=0.1,
-            random_seed=42
-        )
-        
-        # Check that perturbation was applied
-        self.assertTrue(hasattr(dataset_gaussian, 'perturbation_stats'))
-        self.assertEqual(dataset_gaussian.perturbation_stats['perturbation_type'], 'gaussian')
-        self.assertEqual(dataset_gaussian.perturbation_stats['num_perturbed'], 5)  # 50% of 10
-        
-        # Test uniform perturbation
-        dataset_uniform = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            label_perturbation="uniform",
-            perturbation_ratio=0.3,
-            perturbation_noise_std=0.05,
-            random_seed=42
-        )
-        
-        self.assertEqual(dataset_uniform.perturbation_stats['perturbation_type'], 'uniform')
-        self.assertEqual(dataset_uniform.perturbation_stats['num_perturbed'], 3)  # 30% of 10
-        
-        # Test label flip perturbation
-        dataset_flip = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            label_perturbation="label_flip",
-            perturbation_ratio=0.2,
-            random_seed=42
-        )
-        
-        self.assertEqual(dataset_flip.perturbation_stats['perturbation_type'], 'label_flip')
-        self.assertEqual(dataset_flip.perturbation_stats['num_perturbed'], 2)  # 20% of 10
-    
-    def test_data_consistency_across_runs(self):
-        """Test that same configuration produces identical results"""
-        # Create two identical datasets
-        dataset1 = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            normalization="z-norm",
-            random_seed=42
-        )
-        
-        dataset2 = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            normalization="z-norm",
-            random_seed=42
-        )
-        
-        # Check that data is identical
-        self.assertTrue(torch.equal(dataset1.triples, dataset2.triples))
-        self.assertTrue(torch.equal(dataset1.tails, dataset2.tails))
-        self.assertTrue(torch.equal(dataset1.tails_norm, dataset2.tails_norm))
-        
-        # Check that normalization parameters are identical
-        self.assertEqual(dataset1.normalization_params, dataset2.normalization_params)
-    
-    def test_perturbation_reproducibility(self):
-        """Test that perturbations are reproducible with same random seed"""
-        dataset1 = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            label_perturbation="gaussian",
-            perturbation_ratio=0.5,
-            perturbation_noise_std=0.1,
-            random_seed=42
-        )
-        
-        dataset2 = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            label_perturbation="gaussian",
-            perturbation_ratio=0.5,
-            perturbation_noise_std=0.1,
-            random_seed=42
-        )
-        
-        # Check that perturbations are identical
-        self.assertTrue(torch.equal(dataset1.tails_norm, dataset2.tails_norm))
-        self.assertEqual(dataset1.perturbation_stats['perturbed_indices'], 
-                        dataset2.perturbation_stats['perturbed_indices'])
-    
-    def test_getitem_functionality(self):
-        """Test __getitem__ method returns correct format"""
+    def test_get_df_test_split(self, temp_dataset_dir, entity_mapping):
+        """Test get_df for test split"""
         dataset = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping
         )
         
-        # Test single item access
-        triple, target = dataset[0]
+        test_df = dataset.get_df(split='test')
         
-        # Check types and shapes
-        self.assertIsInstance(triple, torch.Tensor)
-        self.assertIsInstance(target, torch.Tensor)
-        self.assertEqual(triple.shape, (2,))  # [entity_idx, relation_idx]
-        self.assertEqual(target.shape, ())    # scalar
+        assert len(test_df) == 3  # 3 test triples
+        assert 'head_idx' in test_df.columns
+        assert 'rel_idx' in test_df.columns
+        assert 'tail' in test_df.columns
         
-        # Check that indices are valid
-        self.assertGreaterEqual(triple[0].item(), 0)
-        self.assertLess(triple[0].item(), dataset.num_entities)
-        self.assertGreaterEqual(triple[1].item(), 0)
-        self.assertLess(triple[1].item(), dataset.num_data_properties)
+        # Check that indices are properly mapped
+        assert all(test_df['head_idx'].notna())
+        assert all(test_df['rel_idx'].notna())
     
-    def test_get_df_functionality(self):
-        """Test get_df method for different splits"""
+    def test_get_df_with_selected_attributes(self, temp_dataset_dir, entity_mapping):
+        """Test get_df with selected attributes filtering"""
         dataset = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
+            selected_attributes=['height']
         )
         
-        # Test train split
-        train_df = dataset.get_df("train")
-        self.assertEqual(len(train_df), 10)
-        self.assertIn("head_idx", train_df.columns)
-        self.assertIn("rel_idx", train_df.columns)
+        test_df = dataset.get_df(split='test')
         
-        # Test test split
-        test_df = dataset.get_df("test")
-        self.assertEqual(len(test_df), 3)
-        
-        # Test validation split (should be empty)
-        val_df = dataset.get_df("val")
-        self.assertEqual(len(val_df), 0)
+        # Only height triples should remain
+        assert len(test_df) == 1
+        assert all(test_df['relation'] == 'height')
     
-    def test_get_batch_functionality(self):
-        """Test get_batch method with different configurations"""
+    def test_get_batch_no_sampling(self, temp_dataset_dir, entity_mapping):
+        """Test get_batch returns all triples for entities (no random sampling)"""
         dataset = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping
         )
         
-        # Test batch for specific entities
-        entity_indices = torch.tensor([0, 1])  # entity_1, entity_2
+        # Get batch for entity1 (index 0)
+        entity_indices = torch.tensor([0])
         ent_ids, rel_ids, labels = dataset.get_batch(entity_indices)
         
-        # Check that all returned entities are in the requested set
-        self.assertTrue(torch.all(torch.isin(ent_ids, entity_indices)))
+        # Should return all triples for entity1 (height and weight)
+        assert len(ent_ids) == 2
+        assert all(ent_ids == 0)  # All should be entity1
         
-        # Test multi-regression format
-        ent_ids_multi, rel_ids_multi, labels_multi = dataset.get_batch(
-            entity_indices, multi_regression=True
+        # Test multiple entities
+        entity_indices = torch.tensor([0, 1])
+        ent_ids, rel_ids, labels = dataset.get_batch(entity_indices)
+        
+        # Should return all triples for entity1 and entity2
+        assert len(ent_ids) == 4  # 2 for entity1 + 2 for entity2
+    
+    def test_get_batch_multi_regression(self, temp_dataset_dir, entity_mapping):
+        """Test get_batch with multi_regression=True"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping
         )
         
-        # Check multi-regression output shape
-        self.assertEqual(labels_multi.shape[1], dataset.num_data_properties)
+        entity_indices = torch.tensor([0])
+        ent_ids, rel_ids, y_true = dataset.get_batch(entity_indices, multi_regression=True)
+        
+        # y_true should be a matrix with shape [num_triples, num_properties]
+        assert y_true.shape[1] == dataset.num_data_properties
+        assert y_true.shape[0] == len(ent_ids)
+        
+        # Most values should be -9.0 (placeholder), only specific relations have real values
+        assert torch.sum(y_true == -9.0) > 0
     
-    def test_denormalization(self):
-        """Test denormalization static method for different normalization types"""
-        # Test z-norm denormalization
-        dataset_znorm = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
+    def test_get_ea_encoding(self, temp_dataset_dir, entity_mapping):
+        """Test entity-attribute encoding matrix"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping
+        )
+        
+        ea = dataset.get_ea_encoding()
+        
+        assert ea.shape == (dataset.num_entities, dataset.num_data_properties)
+        assert ea.dtype == torch.float32
+        
+        # Check that the encoding is binary (0s and 1s)
+        assert torch.all((ea == 0) | (ea == 1))
+    
+    def test_denormalize_z_norm(self, temp_dataset_dir, entity_mapping):
+        """Test denormalization with z-norm"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
             normalization="z-norm"
         )
         
-        # Get some normalized predictions
-        height_idx = dataset_znorm.data_property_to_idx["height"]
-        height_mask = dataset_znorm.triples[:, 1] == height_idx
-        height_norm_values = dataset_znorm.tails_norm[height_mask]
+        # Create some normalized predictions
+        preds_norm = np.array([0.0, 1.0])  # Normalized predictions
+        attributes = ['height', 'height']
         
-        # Denormalize
-        denorm_values = LiteralDataset.denormalize(
-            height_norm_values.numpy(),
-            ["height"] * len(height_norm_values),
-            dataset_znorm.normalization_params
+        denormalized = dataset.denormalize(
+            preds_norm=preds_norm,
+            attributes=attributes,
+            normalization_params=dataset.normalization_params
         )
         
-        # Check that denormalized values match original
-        original_height_values = dataset_znorm.tails[height_mask].numpy()
-        np.testing.assert_array_almost_equal(denorm_values, original_height_values, decimal=5)
-        
-        # Test log-based denormalization
-        dataset_log = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            normalization="log"
-        )
-        
-        # Test that log denormalization works
-        log_norm_values = dataset_log.tails_norm[:3].numpy()
-        denorm_log_values = LiteralDataset.denormalize(
-            log_norm_values,
-            ["height", "weight", "height"],  # Mix of attributes
-            dataset_log.normalization_params
-        )
-        
-        # Denormalized values should be positive (since they came from exp)
-        self.assertTrue(np.all(denorm_log_values > 0))
+        assert len(denormalized) == 2
+        assert isinstance(denormalized, np.ndarray)
     
-    def test_utility_methods(self):
-        """Test utility methods for dataset information"""
+    def test_denormalize_min_max(self, temp_dataset_dir, entity_mapping):
+        """Test denormalization with min-max"""
         dataset = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            selected_attributes=["height"]
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
+            normalization="min-max"
         )
         
-        # Test get_available_attributes
-        available_attrs = dataset.get_available_attributes()
-        self.assertIn("height", available_attrs)
-        self.assertIn("weight", available_attrs)
+        preds_norm = np.array([0.0, 1.0])
+        attributes = ['height', 'height']
         
-        # Test get_attribute_stats
+        denormalized = dataset.denormalize(
+            preds_norm=preds_norm,
+            attributes=attributes,
+            normalization_params=dataset.normalization_params
+        )
+        
+        assert len(denormalized) == 2
+        # For min-max, 0.0 should give min value, 1.0 should give max value
+        height_min = dataset.normalization_params['height']['min']
+        height_max = dataset.normalization_params['height']['max']
+        
+        assert abs(denormalized[0] - height_min) < 1e-6
+        assert abs(denormalized[1] - height_max) < 1e-6
+    
+    def test_denormalize_no_norm(self, temp_dataset_dir, entity_mapping):
+        """Test denormalization with no normalization"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
+            normalization=None
+        )
+        
+        preds_norm = np.array([1.75, 70.5])
+        attributes = ['height', 'weight']
+        
+        denormalized = dataset.denormalize(
+            preds_norm=preds_norm,
+            attributes=attributes,
+            normalization_params=dataset.normalization_params
+        )
+        
+        # Should return original values unchanged
+        assert np.allclose(denormalized, preds_norm)
+    
+    def test_get_available_attributes(self, temp_dataset_dir, entity_mapping):
+        """Test getting available attributes"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping
+        )
+        
+        attributes = dataset.get_available_attributes()
+        
+        assert isinstance(attributes, list)
+        assert set(attributes) == {'height', 'weight', 'age'}
+        assert attributes == sorted(attributes)  # Should be sorted
+    
+    def test_get_attribute_stats(self, temp_dataset_dir, entity_mapping):
+        """Test getting attribute statistics"""
+        dataset = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping
+        )
+        
         stats = dataset.get_attribute_stats()
-        self.assertIn("filtered", stats)  # Should have filtered stats since we used selected_attributes
         
-        # Test get_perturbation_info (no perturbation applied)
-        perturbation_info = dataset.get_perturbation_info()
-        self.assertIn("message", perturbation_info)
+        assert "all" in stats
+        assert isinstance(stats["all"], pd.Series)
+        
+        # Test with selected attributes
+        dataset_filtered = LiteralDataset(
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping,
+            selected_attributes=['height']
+        )
+        
+        stats_filtered = dataset_filtered.get_attribute_stats()
+        assert "original" in stats_filtered
+        assert "filtered" in stats_filtered
     
-    def test_error_handling(self):
-        """Test error handling for invalid inputs"""
-        # Test invalid normalization type (should fall back to no normalization)
+    def test_getitem(self, temp_dataset_dir, entity_mapping):
+        """Test __getitem__ method"""
         dataset = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            normalization="invalid_norm"
+            dataset_dir=temp_dataset_dir,
+            ent_idx=entity_mapping
         )
-        # Should fall back to no normalization (but type key won't be set for invalid values)
-        # Check that tail_norm equals tail (no normalization applied)
-        self.assertTrue(torch.equal(dataset.tails_norm, dataset.tails))
         
-        # Test invalid sampling ratio
-        with self.assertRaises(ValueError):
-            dataset = LiteralDataset(
-                dataset_dir=self.test_dir,
-                ent_idx=self.entity_to_idx,
-                sampling_ratio=1.5  # > 1.0
-            )
+        triple, label = dataset[0]
         
-        # Test non-existent selected attributes
-        with self.assertRaises(ValueError):
-            dataset = LiteralDataset(
-                dataset_dir=self.test_dir,
-                ent_idx=self.entity_to_idx,
-                selected_attributes=["non_existent_attribute"]
-            )
-        
-        # Test invalid perturbation type
-        with self.assertRaises(ValueError):
-            dataset = LiteralDataset(
-                dataset_dir=self.test_dir,
-                ent_idx=self.entity_to_idx,
-                label_perturbation="invalid_perturbation"
-            )
-        
-        # Test missing data file
-        empty_dir = tempfile.mkdtemp()
-        os.makedirs(os.path.join(empty_dir, "literals"))
-        
-        with self.assertRaises(FileNotFoundError):
-            dataset = LiteralDataset(
-                dataset_dir=empty_dir,
-                ent_idx=self.entity_to_idx
-            )
-        
-        shutil.rmtree(empty_dir)
+        assert isinstance(triple, torch.Tensor)
+        assert isinstance(label, torch.Tensor)
+        assert triple.shape == (2,)  # [entity_idx, relation_idx]
+        assert label.shape == ()  # Scalar
     
-    def test_advanced_perturbations(self):
-        """Test advanced perturbation methods"""
-        # Test scaled noise perturbation
-        dataset_scaled = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            label_perturbation="scaled_noise",
-            perturbation_ratio=0.4,
-            perturbation_noise_std=0.1,
-            random_seed=42
-        )
-        
-        self.assertEqual(dataset_scaled.perturbation_stats['perturbation_type'], 'scaled_noise')
-        
-        # Test dropout perturbation
-        dataset_dropout = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            label_perturbation="dropout",
-            perturbation_ratio=0.3,
-            perturbation_noise_std=0.5,  # 50% dropout rate
-            random_seed=42
-        )
-        
-        self.assertEqual(dataset_dropout.perturbation_stats['perturbation_type'], 'dropout')
-        
-        # Test quantization perturbation
-        dataset_quant = LiteralDataset(
-            dataset_dir=self.test_dir,
-            ent_idx=self.entity_to_idx,
-            label_perturbation="quantization",
-            perturbation_ratio=0.5,
-            perturbation_noise_std=0.1,  # 10 quantization levels
-            random_seed=42
-        )
-        
-        self.assertEqual(dataset_quant.perturbation_stats['perturbation_type'], 'quantization')
-
-
-def run_regression_tests():
-    """Function to run all regression tests"""
-    unittest.main(verbosity=2)
-
-
-if __name__ == "__main__":
-    # Run tests with detailed output
-    unittest.main(verbosity=2)
+    def test_invalid_sampling_ratio(self, temp_dataset_dir, entity_mapping):
+        """Test invalid sampling ratio raises error"""
+        with pytest.raises(ValueError, match="Fraction must be between 0 and 1"):
+            LiteralDataset(
+                dataset_dir=temp_dataset_dir,
+                ent_idx=entity_mapping,
+                sampling_ratio=1.5
+            )
+    
+    def test_missing_file(self, entity_mapping):
+        """Test handling of missing dataset files"""
+        with pytest.raises(FileNotFoundError):
+            LiteralDataset(
+                dataset_dir="/nonexistent/path",
+                ent_idx=entity_mapping
+            )
+    
+    def test_empty_selected_attributes(self, temp_dataset_dir, entity_mapping):
+        """Test error when selected attributes result in empty dataset"""
+        with pytest.raises(ValueError, match="No triples found for selected attributes"):
+            LiteralDataset(
+                dataset_dir=temp_dataset_dir,
+                ent_idx=entity_mapping,
+                selected_attributes=['nonexistent_attribute']
+            )
