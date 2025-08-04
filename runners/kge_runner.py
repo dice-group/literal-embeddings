@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader
 from src.abstracts import KGETrainer
 from src.callbacks import ASWA, EpochLevelProgressBar
 from src.dataset import LiteralDataset
-from src.model import LiteralEmbeddings
 from src.static_funcs import evaluate_lit_preds, save_kge_experiments
 from src.trainer import KGE_Literal
 
@@ -79,19 +78,38 @@ def train_kge_model(args):
         args.combined_training = True
         args.skip_eval_literals = True
     if args.combined_training:
+        # Import external embedding models only when needed
+        from src.model import LiteralEmbeddingsExt, LiteralEmbeddingsCliffordExt
+        
         literal_dataset = LiteralDataset(
             dataset_dir=args.dataset_dir,
             ent_idx=entity_dataset.entity_to_idx,
             normalization=args.lit_norm,
         )
         args.num_attributes = literal_dataset.num_data_properties
-        Literal_model = LiteralEmbeddings(
-            num_of_data_properties=literal_dataset.num_data_properties,
-            embedding_dims=args.embedding_dim,
-            multi_regression=args.multi_regression,
-        )
+        
+        # Use external embedding model that takes embeddings as input
+        if hasattr(args, 'use_clifford') and args.use_clifford:
+            Literal_model = LiteralEmbeddingsCliffordExt(
+                num_of_data_properties=literal_dataset.num_data_properties,
+                embedding_dims=args.embedding_dim,
+                dropout=getattr(args, 'dropout', 0.15),
+                gate_residual=getattr(args, 'gate_residual', False),
+            )
+        else:
+            Literal_model = LiteralEmbeddingsExt(
+                num_of_data_properties=literal_dataset.num_data_properties,
+                embedding_dims=args.embedding_dim,
+                dropout=getattr(args, 'dropout', 0.3),
+                gate_residual=getattr(args, 'gate_residual', True),
+            )
 
     kge_model, _ = intialize_model(vars(args), 0)
+    
+    # Move models to device
+    kge_model = kge_model.to(args.device)
+    if Literal_model is not None:
+        Literal_model = Literal_model.to(args.device)
 
     # Evaluator and Lightning module
     evaluator = Evaluator(args=args)

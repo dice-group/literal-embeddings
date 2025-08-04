@@ -208,8 +208,8 @@ class LiteralCallback(Callback):
             lit_properties.to(pl_module.device),
             y_true.to(pl_module.device),
         )
-        ent_embeds = pl_module.kge_model.entity_embeddings(lit_entities)
-        yhat_lit = self.Literal_model(ent_embeds, lit_properties, train_ent_embeds=True)
+        # For the old LiteralEmbeddings model, pass indices directly
+        yhat_lit = self.Literal_model(lit_entities, lit_properties)
         lit_loss = torch.nn.functional.l1_loss(yhat_lit, y_true)
         pl_module.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True)  
 

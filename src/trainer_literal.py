@@ -20,9 +20,9 @@ def train_literal_model(args, kge_model,
     - loss_log: Dictionary logging the literal training loss per epoch
     """
 
-    device = args.device
+    device = getattr(args, "device", torch.device("cpu"))
     literal_model = literal_model.to(device)
-    #kge_model = kge_model.to(device)
+    kge_model = kge_model.to(device)
     kge_model.eval()  # Freeze KGE model
 
     loss_log = {"lit_loss": []}

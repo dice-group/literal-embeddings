@@ -215,11 +215,20 @@ def evaluate_lit_preds(
 
     model.eval()
     literal_model.eval()
-    device = literal_model.device if hasattr(literal_model, 'device') else device
+    device = literal_model.device if hasattr(literal_model, 'device') else "cpu"
     entities, properties = entities.to(device), properties.to(device)
 
     with torch.no_grad():
-        predictions = literal_model.forward(entities, properties)
+        # Check if this is an external embedding model (doesn't have entity_embeddings parameter)
+        if hasattr(literal_model, 'entity_embeddings'):
+            # Old model - pass entities directly
+            predictions = literal_model.forward(entities, properties)
+        else:
+            # External embedding model - get embeddings from KGE model first
+            entity_embeddings = model.entity_embeddings(entities)
+            # Ensure embeddings are on the same device as the literal model
+            entity_embeddings = entity_embeddings.to(device)
+            predictions = literal_model.forward(entity_embeddings, properties)
 
     if multi_regression:
         preds_norm = (

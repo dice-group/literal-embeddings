@@ -53,9 +53,9 @@ class KGE_Literal(LightningModule):
             )
 
             ent_embeds = self.kge_model.entity_embeddings(lit_entities)
-            yhat_lit = self.Literal_model(
-                ent_embeds, lit_properties, train_ent_embeds=True
-            )
+            # Ensure embeddings are on the same device as the literal model
+            ent_embeds = ent_embeds.to(self.device)
+            yhat_lit = self.Literal_model(ent_embeds, lit_properties)
             lit_loss = F.l1_loss(yhat_lit, y_true)
             self.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True)
 

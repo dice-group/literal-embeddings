@@ -4,7 +4,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from src.dataset import LiteralDataset
-from src.model import LiteralEmbeddings , LiteralEmbeddingsClifford
+from src.model import LiteralEmbeddings, LiteralEmbeddingsClifford
 from src.static_funcs import (evaluate_lit_preds, load_model_components,
                               save_literal_experiments)
 from src.trainer_literal import train_literal_model
@@ -42,15 +42,20 @@ def train_literals(args):
         args.full_storage_path = (
             f"Experiments/Literals/{dataset_name}/{args.model}_{args.embedding_dim}_{args.literal_model}"
         )
+        if not args.freeze_entity_embeddings:
+            args.full_storage_path += "_emb_updated"
 
     literal_dataset = LiteralDataset(
-        dataset_dir=args.dataset_dir, ent_idx=e2idx, normalization=args.lit_norm, sampling_ratio=args.lit_sampling_ratio
+        dataset_dir=args.dataset_dir, 
+        ent_idx=e2idx, 
+        normalization=args.lit_norm, 
+        sampling_ratio=args.lit_sampling_ratio
     )
     literal_batch_loader = DataLoader(
         literal_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=min(4, os.cpu_count()),  # Tune this
+        num_workers=min(4, os.cpu_count()),
         pin_memory=args.device.type == "cuda",
     )
 
@@ -83,10 +88,8 @@ def train_literals(args):
                 dropout=getattr(args, 'dropout', 0.3),
                 gate_residual=getattr(args, 'gate_residual', True),
             )
-            
         else:
             raise ValueError(f"Unknown literal model type: {args.literal_model}. Supported types: 'mlp', 'clifford'")
-            
         
         literal_model, lit_loss = train_literal_model(
             args=args,
@@ -122,7 +125,6 @@ def train_literals(args):
             if final_loss_df is None:
                 final_loss_df = df_loss.copy()
                 final_loss_df.insert(0, "epoch", range(1, len(df_loss) + 1))
-                
             else:
                 final_loss_df = pd.concat([final_loss_df, df_loss], axis=1)
                 
@@ -130,8 +132,6 @@ def train_literals(args):
                 final_results_df = df_results.copy()
             else:
                 final_results_df = pd.merge(final_results_df, df_results, on="relation", how="left")
-
-
 
     if args.save_experiment:
         save_literal_experiments(
@@ -141,25 +141,25 @@ def train_literals(args):
             results_df=final_results_df
         )
 
-    if not args.freeze_entity_embeddings:
-        test_dir = os.path.join(args.dataset_dir, "test.txt")
-        assert os.path.exists(test_dir), f"Test file not found at {test_dir}"
-        test_triples = pd.read_csv(test_dir,
-                           sep="\s+",
-                           header=None, usecols=[0, 1, 2],
-                           names=['subject', 'relation', 'object'],
-                           dtype=str).values.tolist()
-        lp_results_kge = evaluate_link_prediction_performance_with_reciprocals(kge_model, triples=test_triples,
-                                                                            model_components=model_components)
-        print(f"Link prediction results before literal training:\n {lp_results_kge}")
-        # Save the model with updated entity embeddings
-        kge_model.entity_embeddings.weight.data.copy_(literal_model.entity_embeddings.weight.data)
+    # if not args.freeze_entity_embeddings:
+    #     test_dir = os.path.join(args.dataset_dir, "test.txt")
+    #     assert os.path.exists(test_dir), f"Test file not found at {test_dir}"
+    #     test_triples = pd.read_csv(test_dir,
+    #                        sep="\s+",
+    #                        header=None, usecols=[0, 1, 2],
+    #                        names=['subject', 'relation', 'object'],
+    #                        dtype=str).values.tolist()
+    #     lp_results_kge = evaluate_link_prediction_performance_with_reciprocals(kge_model, triples=test_triples,
+    #                                                                         model_components=model_components)
+    #     print(f"Link prediction results before literal training:\n {lp_results_kge}")
+    #     # Save the model with updated entity embeddings
+    #     kge_model.entity_embeddings.weight.data.copy_(literal_model.entity_embeddings.weight.data)
 
-        save_checkpoint_model(
-            model=kge_model,
-            path =args.full_storage_path + f"/lit_augmented_model.pt",
-        )
+    #     save_checkpoint_model(
+    #         model=kge_model,
+    #         path =args.full_storage_path + f"/lit_augmented_model.pt",
+    #     )
         
-        lp_results_kge_lit = evaluate_link_prediction_performance_with_reciprocals(kge_model, triples=test_triples,
-                                                                            model_components=model_components)
-        print(f"Link prediction results after literal training:\n {lp_results_kge_lit}")
+    #     lp_results_kge_lit = evaluate_link_prediction_performance_with_reciprocals(kge_model, triples=test_triples,
+    #                                                                         model_components=model_components)
+    #     print(f"Link prediction results after literal training:\n {lp_results_kge_lit}")

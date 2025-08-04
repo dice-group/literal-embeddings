@@ -2,8 +2,12 @@ import argparse
 import json
 
 
-def get_default_arguments():
-    """Extends pytorch_lightning Trainer's arguments with ours"""
+def get_default_arguments(args_list=None):
+    """Extends pytorch_lightning Trainer's arguments with ours
+    
+    Args:
+        args_list: Optional list of arguments to parse. If None, uses sys.argv
+    """
     parser = argparse.ArgumentParser(add_help=False)
     # Knowledge graph related arguments
     parser.add_argument(
@@ -409,4 +413,4 @@ def get_default_arguments():
         action="store_true",
         help="Perform multi-output regression for Literal Embedding model.",
     )
-    return parser.parse_args()
+    return parser.parse_args(args_list)
