@@ -17,11 +17,7 @@ class LiteralDataset(Dataset):
             ent_idx: Entity index mapping
             normalization: Normalization type ("z-norm", "min-max", etc.)
             sampling_ratio: Fraction of training data to use
-            selected_attributes: List of specific attributes to use
-            label_perturbation: Type of label perturbation ("gaussian", "uniform", "label_flip", None)
-            perturbation_ratio: Fraction of labels to perturb (0.0 to 1.0)
-            perturbation_noise_std: Standard deviation for gaussian noise or range for uniform noise
-            random_seed: Random seed for reproducible perturbations
+            selected_attributes: List of specific attributes to use.
         """
         self.dataset_dir = os.path.join(dataset_dir, "literals")
         self.normalization_type = normalization
