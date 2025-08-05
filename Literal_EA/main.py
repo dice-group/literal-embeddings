@@ -5,11 +5,12 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 from config import parse_args
 from callbacks import ASWA
+from litem import LiteralEmbeddings
 
 # Set float32 matmul precision for better performance
 torch.set_float32_matmul_precision('medium')
 
-from dataset import KGDataset
+from dataset import KGDataset , LiteralDataset
 from model import *
 from trainer import LitModel
 from evaluate import Evaluator
@@ -50,12 +51,15 @@ def build_er_vocab(triples, entity2idx, relation2idx):
 
 def main(args):
     """Main training function"""
-    data_dir = f"{args.input}/{args.dataset}/"
-    exp_dir = f"Experiments/best_configs/try/{args.dataset}_{args.model}/"
-    if args.swa:
-        exp_dir = exp_dir + 'swa'
-    if args.adaptive_swa:
-        exp_dir = exp_dir + "aswa"
+    if args.exp_dir is None:
+        data_dir = f"{args.input}/{args.dataset}/"
+        exp_dir = f"Experiments/Literals/{args.dataset}_{args.model}"
+        if args.combined_training:
+            exp_dir += "_combined/"
+        if args.swa:
+            exp_dir = exp_dir + '/SWA'
+        if args.adaptive_swa:
+            exp_dir = exp_dir + "/ASWA"
     if not os.path.exists(exp_dir):
         os.makedirs(exp_dir)
         
@@ -107,13 +111,28 @@ def main(args):
         train_datalaoder=train_loader,
         test_dataloader=test_loader,
         val_dataloader=val_loader)
-        
+
+    
+    if args.combined_training:
+        print("Using combined training with Literal Embedding model")
+        literal_dataset = LiteralDataset(
+        dataset_dir=data_dir,
+        ent_idx=train_dataset.entity2idx,
+        normalization_type=args.lit_norm
+    )
+    
+        litem_model = LiteralEmbeddings(
+        num_of_data_properties=literal_dataset.num_data_properties,
+        embedding_dims=args.embedding_dim,
+        dropout=0.15)
+    else:
+        litem_model = None
+        literal_dataset = None
     # Initialize model
     lit_model = LitModel(
-        args.model, train_dataset, args.edim, args.rdim, kwargs,
-        args.lr, args.label_smoothing, model_mapping=model_mapping,
-        er_vocab=er_vocab, evaluator=evaluator, exp_dir = exp_dir,
-        lr_decay=args.lr_decay   
+    args.model, train_dataset, args.edim, args.rdim, kwargs,
+    args.lr, args.label_smoothing, model_mapping=model_mapping,
+    er_vocab=er_vocab, evaluator=evaluator, exp_dir=exp_dir, literal_model=litem_model, literal_dataset=literal_dataset
     )
     
     # Setup callbacks
