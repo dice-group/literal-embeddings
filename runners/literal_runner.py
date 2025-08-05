@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import torch
+import gc
 from torch.utils.data import DataLoader
 from src.dataset import LiteralDataset
 from src.model import LiteralEmbeddings, LiteralEmbeddingsClifford
@@ -11,16 +12,35 @@ from src.trainer_literal import train_literal_model
 from dicee.static_funcs import save_checkpoint_model
 from src.static_funcs import evaluate_link_prediction_performance_with_reciprocals
 
+def clear_cuda_cache():
+    """Clear CUDA cache and force garbage collection."""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+    gc.collect()
+    
+def reset_random_seeds(seed, run=0):
+    """Reset all random seeds for reproducibility."""
+    torch.manual_seed(seed + run)
+    np.random.seed(seed + run)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed + run)
+        # Reset CUDA deterministic settings
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
 def train_literals(args):
     """Train literal embeddings using a pre-trained KGE model."""
+
+    # Initial cleanup
+    clear_cuda_cache()
     
     # Normalize to lowercase
     args.literal_model = args.literal_model.lower()
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch.manual_seed(args.random_seed)
-    if args.device.type == "cuda":
-        torch.cuda.manual_seed_all(args.random_seed)
-        torch.backends.cudnn.benchmark = True
+    print(f"Using device: {args.device}")
+    # Set initial random seeds
+    reset_random_seeds(args.random_seed)
 
     model_components = load_model_components(args.pretrained_kge_path)
     if model_components is None:
@@ -65,9 +85,11 @@ def train_literals(args):
     for run in range(args.num_literal_runs):
         print(f"Starting literal training run {run + 1}/{args.num_literal_runs}")
         # Set different seeds per run if needed
-        torch.manual_seed(args.random_seed + run)
-        if args.device.type == "cuda":
-            torch.cuda.manual_seed_all(args.random_seed + run)
+        # Clear caches before each run
+        clear_cuda_cache()
+        
+        # Reset seeds for reproducibility
+        reset_random_seeds(args.random_seed, run)
 
         # Initialize the appropriate literal model based on args.literal_model
         if args.literal_model == 'clifford':
