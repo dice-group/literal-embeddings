@@ -22,6 +22,7 @@ from src.trainer import KGE_Literal
 def train_kge_model(args):
     """Train a KGE model with optional literal embeddings."""
     # Set up experiment storage path
+    args.learning_rate = args.lr
     if not args.full_storage_path:
         dataset_name = os.path.basename(args.dataset_dir)
         if not dataset_name:
@@ -55,7 +56,7 @@ def train_kge_model(args):
         label_smoothing_rate=args.label_smoothing_rate,
     )
     train_dataloader = DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=7
+        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_core
     )
 
     # Prepare validation dataloader if needed
@@ -74,9 +75,6 @@ def train_kge_model(args):
     # Combined training and literal model setup
     literal_dataset = None
     Literal_model = None
-    if args.model == "DistMult_EA":
-        args.combined_training = True
-        args.skip_eval_literals = True
     if args.combined_training:
         # Import external embedding models only when needed
         from src.model import LiteralEmbeddingsExt, LiteralEmbeddingsCliffordExt
@@ -89,7 +87,7 @@ def train_kge_model(args):
         args.num_attributes = literal_dataset.num_data_properties
         
         # Use external embedding model that takes embeddings as input
-        if hasattr(args, 'use_clifford') and args.use_clifford:
+        if args.literal_model == "clifford":
             Literal_model = LiteralEmbeddingsCliffordExt(
                 num_of_data_properties=literal_dataset.num_data_properties,
                 embedding_dims=args.embedding_dim,
@@ -119,6 +117,8 @@ def train_kge_model(args):
 
     # Callbacks setup
     callbacks = [EpochLevelProgressBar()]
+    # if args.literalE:
+    #     callbacks.append(LiteralCallback(args))
     if args.early_stopping:
         callbacks.append(EarlyStopping(
             monitor="ent_loss_val",
@@ -132,6 +132,7 @@ def train_kge_model(args):
     else:
         print("No Stochastic Weight Averaging (SWA) or Adaptive SWA (ASWA) used.")
 
+    check_val_epochs = 1 if args.log_validation and valid_dataloader else None
     # Trainer setup
     trainer = KGETrainer(
         max_epochs=args.num_epochs,
@@ -139,7 +140,7 @@ def train_kge_model(args):
         devices=1,
         callbacks=callbacks,
         logger=False,
-        check_val_every_n_epoch=0,
+        check_val_every_n_epoch=check_val_epochs,
         log_every_n_steps=0,
         enable_checkpointing=False,
         evaluator=evaluator,

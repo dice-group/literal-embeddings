@@ -38,14 +38,10 @@ class KGE_Literal(LightningModule):
         ent_loss = self.bce_loss_fn(yhat_e, train_y)
         self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True)
 
-        if self.Literal_model and  self.current_epoch > self.args.deffered_literal_training_epochs:
+        if self.Literal_model and  self.current_epoch > self.args.deferred_literal_training_epochs:
             # Literal model forward
             entity_ids = train_X[:, 0].long().to("cpu")
-            lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(
-                entity_ids,
-                multi_regression=self.args.multi_regression,
-                random_seed = None,
-            )
+            lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(entity_ids)
             lit_entities, lit_properties, y_true = (
                 lit_entities.to(self.device),
                 lit_properties.to(self.device),
