@@ -357,7 +357,7 @@ def get_default_arguments(args_list=None):
     parser.add_argument(
         "--log_validation",
         action="store_true",
-        default=True,
+        default=False,
         help="Log the validation loss of the training process",
     )
     parser.add_argument(
@@ -385,7 +385,7 @@ def get_default_arguments(args_list=None):
         help="Early stopping for training",
     )
     parser.add_argument(
-        "--deferred_literal_training",
+        "--deferred_literal_training_epochs",
         type=int,
         default=0,
         help="Number of epochs for deferred literal training for KGE Model. Set to 0 to disable.",
