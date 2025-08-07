@@ -1,3 +1,4 @@
+import os
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
@@ -6,23 +7,24 @@ import json
 
 class LitModel(pl.LightningModule):
     """PyTorch Lightning module for knowledge graph embedding models"""
-    def __init__(self, model_name, d, ent_vec_dim, rel_vec_dim, kwargs, lr, label_smoothing, model_mapping,
-                 evaluator = None, er_vocab=None, exp_dir=None, lr_decay=1.0, literal_model=None, literal_dataset=None):
+    def __init__(self, args, train_dataset, kwargs, model_mapping, evaluator=None, er_vocab=None, 
+                 literal_model=None, literal_dataset=None):
         super().__init__()
         self.save_hyperparameters()
-        self.model_name = model_name
+        self.args = args
+        self.model_name = args.model
         self.model_mapping = model_mapping
-        self.model = model_mapping[model_name](d, ent_vec_dim, rel_vec_dim, **kwargs)
-        self.lr = lr
-        self.label_smoothing = label_smoothing
-        self.num_entities = len(d.entities)
+        self.model = model_mapping[args.model](train_dataset, args.edim, args.rdim, **kwargs)
+        self.lr = args.lr
+        self.label_smoothing = args.label_smoothing
+        self.num_entities = len(train_dataset.entities)
         self.er_vocab = er_vocab
 
         self.scores_dict = dict()
         self.current_split = None
         self.evaluator = evaluator
-        self.exp_dir = exp_dir
-        self.lr_decay = lr_decay
+        self.exp_dir = args.exp_dir
+        self.lr_decay = 1.0
         self.literal_model = literal_model
         self.literal_dataset = literal_dataset
 
@@ -51,10 +53,15 @@ class LitModel(pl.LightningModule):
             y_pred = self.literal_model(e_emb, attr)
             lit_loss = F.mse_loss(y_pred.squeeze(), y_true.float())
             # Combined loss
-            scale = torch.log1p(
-                2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
-            ).detach()
-            total_loss = (1 - scale) * ent_loss + scale * lit_loss
+            if self.args.dynamic_weighting:
+                # Dynamic weighting based on losses
+                scale = torch.log1p(
+                    2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
+                ).detach()
+                total_loss = (1 - scale) * ent_loss + scale * lit_loss
+            else:
+                # Static weighting
+                total_loss = self.args.w1 * ent_loss + self.args.w2 * lit_loss
         else:
             total_loss = ent_loss
 
@@ -63,7 +70,14 @@ class LitModel(pl.LightningModule):
 
     def configure_optimizers(self):
         """Configure Adam optimizer"""
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        if self.literal_model:
+            # Use different learning rate for literal model
+            optimizer = torch.optim.Adam([
+                {'params': self.model.parameters(), 'lr': self.lr},
+                {'params': self.literal_model.parameters(), 'lr': self.lr }
+            ])
+        else:
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         return optimizer
 
     def on_fit_end(self):
@@ -81,3 +95,8 @@ class LitModel(pl.LightningModule):
         model_path = f"{self.exp_dir}/model.pt"
         torch.save(self.model.state_dict(), model_path)
         print(f"Model saved to {model_path}")
+
+        # Save configuration
+        config_to_save = vars(self.args)
+        with open(os.path.join(self.args.exp_dir, "config.json"), "w") as f:
+            json.dump(config_to_save, f, indent=4)

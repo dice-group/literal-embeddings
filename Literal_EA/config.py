@@ -26,6 +26,9 @@ def parse_args():
     parser.add_argument("--swa", action="store_true", help="Stochastic weight averaging")
     parser.add_argument("--adaptive_swa", action="store_true", help="Adaptive stochastic weight averaging")
     parser.add_argument("--exp_dir", type=str, default=None, help="Experiment directory to save results")
+    parser.add_argument("--dynamic_weighting", action="store_true", help="Use dynamic weighting for training")
+    parser.add_argument("--w1", type=float, default=0.95, help="Weight for entity loss in combined training")
+    parser.add_argument("--w2", type=float, default=0.05, help="Weight for literal loss in combined training")
     
     args = parser.parse_args()
     

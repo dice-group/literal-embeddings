@@ -51,17 +51,22 @@ def build_er_vocab(triples, entity2idx, relation2idx):
 
 def main(args):
     """Main training function"""
+    
+    data_dir = f"{args.input}/{args.dataset}/"
+    
+    # Set experiment directory if not provided by user
     if args.exp_dir is None:
-        data_dir = f"{args.input}/{args.dataset}/"
-        exp_dir = f"Experiments/Literals/{args.dataset}_{args.model}"
         if args.combined_training:
-            exp_dir += "_combined/"
+            args.exp_dir = f"Experiments/Literals_combined/{args.dataset}_{args.model}"
+        else:
+            args.exp_dir = f"Experiments/Literals/{args.dataset}_{args.model}"
         if args.swa:
-            exp_dir = exp_dir + '/SWA'
+            args.exp_dir = args.exp_dir + '/SWA'
         if args.adaptive_swa:
-            exp_dir = exp_dir + "/ASWA"
-    if not os.path.exists(exp_dir):
-        os.makedirs(exp_dir)
+            args.exp_dir = args.exp_dir + "/ASWA"
+    
+    if not os.path.exists(args.exp_dir):
+        os.makedirs(args.exp_dir)
         
     # Set random seed for reproducibility
     seed = 20
@@ -124,15 +129,15 @@ def main(args):
         litem_model = LiteralEmbeddings(
         num_of_data_properties=literal_dataset.num_data_properties,
         embedding_dims=args.embedding_dim,
-        dropout=0.15)
+        dropout=0.15, freeze_entity_embeddings = False)
     else:
         litem_model = None
         literal_dataset = None
     # Initialize model
     lit_model = LitModel(
-    args.model, train_dataset, args.edim, args.rdim, kwargs,
-    args.lr, args.label_smoothing, model_mapping=model_mapping,
-    er_vocab=er_vocab, evaluator=evaluator, exp_dir=exp_dir, literal_model=litem_model, literal_dataset=literal_dataset
+        args, train_dataset, kwargs, model_mapping=model_mapping,
+        er_vocab=er_vocab, evaluator=evaluator, 
+        literal_model=litem_model, literal_dataset=literal_dataset
     )
     
     # Setup callbacks
@@ -141,7 +146,7 @@ def main(args):
         callbacks.append(SWA(swa_epoch_start=1, swa_lrs=args.lr))
         print("Using Stochastic Weight Averaging (SWA)")
     elif args.adaptive_swa:
-        callbacks.append(ASWA(path=exp_dir, num_epochs=args.num_iterations))
+        callbacks.append(ASWA(path=args.exp_dir, num_epochs=args.num_iterations))
         print("Using Adaptive Stochastic Weight Averaging (ASWA)") 
     else:
         print("Not using weight averaging")
@@ -157,11 +162,6 @@ def main(args):
 
     # Train model
     trainer.fit(lit_model, train_loader, test_loader)
-    
-    # Save configuration
-    config_to_save = vars(args)
-    with open(os.path.join(exp_dir, "config.json"), "w") as f:
-        json.dump(config_to_save, f, indent=4)
 
 if __name__ == '__main__':
     args = parse_args()
