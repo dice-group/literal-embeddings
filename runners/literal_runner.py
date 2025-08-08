@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import torch
 import gc
+import json
 from torch.utils.data import DataLoader
 from src.dataset import LiteralDataset
 from src.model import LiteralEmbeddings, LiteralEmbeddingsClifford
@@ -11,6 +12,50 @@ from src.static_funcs import (evaluate_lit_preds, load_model_components,
 from src.trainer_literal import train_literal_model
 from dicee.static_funcs import save_checkpoint_model
 from src.static_funcs import evaluate_link_prediction_performance_with_reciprocals
+
+def load_best_configs():
+    """Load the best configurations from the config file if it exists."""
+    config_path = "Stats/best_configs.json"
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Warning: Could not load config file {config_path}: {e}")
+            return None
+    else:
+        print(f"Config file {config_path} not found. Using default parameters.")
+        return None
+
+def apply_best_config_to_args(args):
+    """Apply the best configuration for the dataset if available."""
+    configs = load_best_configs()
+    if configs is None:
+        return args
+    
+    # Extract dataset name from dataset_dir
+    dataset_name = os.path.basename(args.dataset_dir)
+    
+    if dataset_name in configs:
+        config = configs[dataset_name]
+        print(f"Applying best configuration for dataset: {dataset_name}")
+        
+        # Apply configuration parameters
+        if hasattr(args, 'batch_size') and 'batch_size' in config:
+            args.batch_size = config['batch_size']
+            print(f"  Set batch_size: {args.batch_size}")
+            
+        if hasattr(args, 'lit_epochs') and 'lit_epochs' in config:
+            args.lit_epochs = config['lit_epochs']
+            print(f"  Set lit_epochs: {args.lit_epochs}")
+            
+        if hasattr(args, 'lit_lr') and 'lit_lr' in config:
+            args.lit_lr = config['lit_lr']
+            print(f"  Set lit_lr: {args.lit_lr}")
+    else:
+        print(f"No configuration found for dataset: {dataset_name}. Using default parameters.")
+    
+    return args
 
 def clear_cuda_cache():
     """Clear CUDA cache and force garbage collection."""
@@ -31,6 +76,9 @@ def reset_random_seeds(seed, run=0):
 
 def train_literals(args):
     """Train literal embeddings using a pre-trained KGE model."""
+
+    # Apply best configuration if available
+    args = apply_best_config_to_args(args)
 
     # Initial cleanup
     clear_cuda_cache()

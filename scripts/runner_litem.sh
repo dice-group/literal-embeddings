@@ -16,7 +16,7 @@ for dataset in "${datasets[@]}"; do
     --model "$model" \
     --dataset_dir "KGs/$dataset" \
     --literal_training \
-    --num_literal_runs 3 \
+    --num_literal_runs 5 \
     --pretrained_kge_path "$pretrained_path"
 
   echo

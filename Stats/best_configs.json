@@ -1,0 +1,22 @@
+{
+  "FB15k-237": {
+    "batch_size": 1024,
+    "lit_epochs": 200,
+    "lit_lr": 0.001
+  },
+  "YAGO15k": {
+    "batch_size": 512,
+    "lit_epochs": 200,
+    "lit_lr": 0.001
+  },
+  "DB15K": {
+    "batch_size": 512,
+    "lit_epochs": 200,
+    "lit_lr": 0.001
+  },
+  "mutagenesis": {
+    "batch_size": 256,
+    "lit_epochs": 200,
+    "lit_lr": 0.001
+  }
+}
