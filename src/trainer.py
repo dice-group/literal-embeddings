@@ -13,18 +13,7 @@ class KGE_Literal(LightningModule):
         self.literal_dataset = literal_dataset
         self.bce_loss_fn = torch.nn.BCEWithLogitsLoss()
 
-        # Define optimizers
-        if self.Literal_model:
-            self.optimizer = optim.Adam(
-                [
-                    {"params": self.kge_model.parameters(), "lr": args.lr},
-                    {"params": self.Literal_model.parameters(), "lr": args.lit_lr},
-                ]
-            )
-        else:
-            self.optimizer = optim.Adam(
-                [{"params": self.kge_model.parameters(), "lr": args.lr}]
-            )
+        
 
     def forward(self, x):
         return self.kge_model(x)
@@ -74,9 +63,24 @@ class KGE_Literal(LightningModule):
         return val_loss
 
     def configure_optimizers(self):
+        # Define optimizers
+        if self.Literal_model:
+            self.optimizer = optim.Adam(
+                [
+                    {"params": self.kge_model.parameters(), "lr": self.args.lr},
+                    {"params": self.Literal_model.parameters(), "lr": self.args.lit_lr},
+                ]
+            )
+        else:
+            self.optimizer = optim.Adam(
+                [{"params": self.kge_model.parameters(), "lr": self.args.lr}]
+            )
+        self.trainer.strategy.zero_grad_kwargs = {'set_to_none': True}
         return self.optimizer
 
     def on_fit_end(self):
+        self.kge_model.to("cpu")
+        self.kge_model.eval()
         self.trainer.evaluator.eval(
             dataset=self.trainer.entity_dataset,
             trained_model=self.kge_model,

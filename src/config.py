@@ -223,6 +223,11 @@ def get_default_arguments(args_list=None):
         default=1,
         help="Seed for all, see pl seed_everything().",
     )
+    parser.add_argument(
+        "--use_manual_training",
+        action="store_true",
+        help="Use manual training loop instead of PyTorch Lightning for exact reproducibility.",
+    )
     parser.add_argument("--p", type=int, default=0, help="P for Clifford Algebra")
     parser.add_argument("--q", type=int, default=1, help="Q for Clifford Algebra")
     parser.add_argument("--pykeen_model_kwargs", type=json.loads, default={})

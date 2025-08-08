@@ -145,6 +145,7 @@ def train_kge_model(args):
         enable_checkpointing=False,
         evaluator=evaluator,
         entity_dataset=entity_dataset,
+        deterministic=True
     )
 
     # Training
