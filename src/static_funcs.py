@@ -4,6 +4,7 @@ import os
 import pickle
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -413,3 +414,120 @@ def evaluate_link_prediction_performance_with_reciprocals(model, triples,
 
     results = {'H@1': hit_1, 'H@3': hit_3, 'H@10': hit_10, 'MRR': mean_reciprocal_rank}
     return results
+
+
+def get_full_storage_path(args):
+    """
+    Generate a full storage path for experiments based on args configuration.
+    
+    Args:
+        args: Arguments namespace containing experiment configuration
+        
+    Returns:
+        str: Full path for storing experiment results
+    """
+    if args.full_storage_path:
+        # If explicitly set, use as-is
+        return args.full_storage_path
+    
+    # Extract dataset name from dataset_dir or path_single_kg
+    dataset_name = None
+    if hasattr(args, 'dataset_dir') and args.dataset_dir:
+        dataset_name = os.path.basename(args.dataset_dir.rstrip('/'))
+    elif hasattr(args, 'path_single_kg') and args.path_single_kg:
+        dataset_name = os.path.basename(args.path_single_kg.rstrip('/'))
+    
+    if not dataset_name:
+        dataset_name = "unknown_dataset"
+    
+    # Generate timestamp for test runs
+    if getattr(args, 'test_runs', False):
+        exp_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
+        return f"Test_runs/{exp_time}"
+    
+    # Determine experiment type and create appropriate path structure
+    if getattr(args, 'combined_training', False):
+        # Combined KGE + Literal training
+        base_path = f"Experiments/KGE_Combined/{dataset_name}_combined"
+        model_name = getattr(args, 'model', 'unknown_model')
+        return f"{base_path}/{model_name}"
+    
+    elif getattr(args, 'literal_training', False):
+        # Literal-only training
+        base_path = f"Experiments/Literal/{dataset_name}"
+        
+        # Add model-specific information
+        literal_model = getattr(args, 'literal_model', 'mlp')
+        embedding_dim = getattr(args, 'embedding_dim', 'unknown_dim')
+        lit_norm = getattr(args, 'lit_norm', 'z-norm')
+        
+        # Include special configurations in path
+        config_parts = [literal_model, str(embedding_dim), lit_norm]
+        
+        if getattr(args, 'gate_residual', False):
+            config_parts.append('gated')
+        if getattr(args, 'residual_connection', False):
+            config_parts.append('residual')
+        if getattr(args, 'freeze_entity_embeddings', False):
+            config_parts.append('frozen')
+            
+        config_str = '_'.join(config_parts)
+        return f"{base_path}/{config_str}"
+    
+    else:
+        # Standard KGE training
+        base_path = f"Experiments/KGE/{dataset_name}"
+        model_name = getattr(args, 'model', 'unknown_model')
+        embedding_dim = getattr(args, 'embedding_dim', 'unknown_dim')
+        return f"{base_path}/{model_name}_{embedding_dim}"
+    
+
+def create_training_report(args, model, dataset, start_time, end_time, additional_info=None):
+    """
+    Create a training report with the exact same structure as the existing format.
+    
+    Args:
+        args: Training arguments
+        model: Trained model
+        dataset: Dataset object
+        start_time: Training start time
+        end_time: Training end time
+        additional_info: Additional information to include in report
+    """
+    
+    # Calculate model size and parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    model_size_mb = total_params * 4 / (1024 * 1024)  # Assuming float32 (4 bytes per param)
+    
+    # Extract dataset information
+    num_entities = getattr(dataset, 'num_entities', None)
+    num_relations = getattr(dataset, 'num_relations', None)
+    num_train_triples = len(dataset.train_set) if hasattr(dataset, 'train_set') else None
+    
+    # Calculate runtime
+    runtime_seconds = end_time - start_time
+    
+    # Build the report with exact same structure
+    report = {
+        "num_train_triples": num_train_triples,
+        "num_entities": num_entities,
+        "num_relations": num_relations,
+        "max_length_subword_tokens": None,
+        "runtime_kg_loading": getattr(args, '_kg_loading_time', None),
+        "EstimatedSizeMB": model_size_mb,
+        "NumParam": total_params,
+        "path_experiment_folder": getattr(args, 'full_storage_path', None),
+        "Runtime": runtime_seconds
+    }
+    
+    return report
+
+def save_training_report(report, save_path):
+    """Save the training report to a JSON file"""
+    report_path = os.path.join(save_path, "report.json")
+    
+    with open(report_path, 'w') as f:
+        json.dump(report, f, indent=4)
+    
+    print(f"Training report saved to: {report_path}")
+    return report_path

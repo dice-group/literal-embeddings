@@ -13,7 +13,7 @@ from pytorch_lightning.callbacks.stochastic_weight_avg import \
 from torch.utils.data import DataLoader
 
 from src.abstracts import KGETrainer
-from src.callbacks import ASWA, EpochLevelProgressBar
+from src.callbacks import ASWA, EpochLevelProgressBar, PeriodicEvalCallback
 from src.dataset import LiteralDataset
 from src.static_funcs import evaluate_lit_preds, save_kge_experiments
 from src.trainer import KGE_Literal
@@ -99,7 +99,7 @@ def train_kge_model(args):
                 num_of_data_properties=literal_dataset.num_data_properties,
                 embedding_dims=args.embedding_dim,
                 dropout=getattr(args, 'dropout', 0.3),
-                gate_residual=getattr(args, 'gate_residual', True),
+                gate_residual=False,
             )
 
     kge_model, _ = intialize_model(vars(args), 0)
@@ -131,6 +131,11 @@ def train_kge_model(args):
         callbacks.append(ASWA(num_epochs=args.num_epochs, path=args.full_storage_path))
     else:
         print("No Stochastic Weight Averaging (SWA) or Adaptive SWA (ASWA) used.")
+    
+    if args.eval_every_n_epochs > 0 or args.eval_at_epochs is not None:
+        callbacks.append(PeriodicEvalCallback(experiment_path=args.full_storage_path, max_epochs=args.num_epochs,
+                        eval_every_n_epoch=args.eval_every_n_epochs, eval_at_epochs=args.eval_at_epochs,
+                        save_model_every_n_epoch=args.save_every_n_epochs, n_epochs_eval_model=args.n_epochs_eval_model))
 
     check_val_epochs = 1 if args.log_validation and valid_dataloader else None
     # Trainer setup

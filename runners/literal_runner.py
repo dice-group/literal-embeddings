@@ -135,7 +135,11 @@ def train_literals(args):
         # Set different seeds per run if needed
         # Clear caches before each run
         clear_cuda_cache()
-        
+
+        # Update entity embeddings if the flag is set
+        if args.update_entity_embeddings:
+            args.freeze_entity_embeddings = False
+
         # Reset seeds for reproducibility
         reset_random_seeds(args.random_seed, run)
 

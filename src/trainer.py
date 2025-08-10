@@ -1,7 +1,10 @@
+from datetime import datetime
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from pytorch_lightning import LightningModule
+
+import json
 
 
 class KGE_Literal(LightningModule):
@@ -14,6 +17,9 @@ class KGE_Literal(LightningModule):
         self.bce_loss_fn = torch.nn.BCEWithLogitsLoss()
 
         
+    def on_train_start(self):
+        """Called when the train begins."""
+        self.start_time = datetime.now()
 
     def forward(self, x):
         return self.kge_model(x)
@@ -29,7 +35,7 @@ class KGE_Literal(LightningModule):
 
         if self.Literal_model and  self.current_epoch > self.args.deferred_literal_training_epochs:
             # Literal model forward
-            entity_ids = train_X[:, 0].long().to("cpu")
+            entity_ids = train_X[:, 0].long()
             lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(entity_ids)
             lit_entities, lit_properties, y_true = (
                 lit_entities.to(self.device),
@@ -87,3 +93,29 @@ class KGE_Literal(LightningModule):
             form_of_labelling="EntityPrediction",
             during_training=False
         )
+
+        num_entities = self.kge_model.num_entities
+        num_relations = self.kge_model.num_relations
+        train_triples = len(self.trainer.entity_dataset.train_set)
+        # Calculate model size and parameters
+        total_params = sum(p.numel() for p in self.kge_model.parameters())
+        model_size_mb = total_params * 4 / (1024 * 1024)  # Assuming float32 (4 bytes per param)
+        path_experiment = self.args.full_storage_path
+        run_time = datetime.now() - self.start_time
+        runtime_seconds = run_time.total_seconds()
+
+        # Create the report
+        report = {
+            "num_train_triples": train_triples,
+            "num_entities": num_entities,
+            "num_relations": num_relations,
+            "max_length_subword_tokens": None,
+            "runtime_kg_loading": getattr(self.args, '_kg_loading_time', None),
+            "EstimatedSizeMB": model_size_mb,
+            "NumParam": total_params,
+            "path_experiment_folder": path_experiment,
+            "Runtime": runtime_seconds
+        }
+        report_path = f"{path_experiment}/report.json"
+        with open(report_path, "w") as f:
+            json.dump(report, f, indent=4)

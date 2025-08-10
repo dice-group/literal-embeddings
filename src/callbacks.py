@@ -4,8 +4,12 @@ from pytorch_lightning import Callback
 from pytorch_lightning.callbacks import TQDMProgressBar
 from tqdm import tqdm
 
+import os
+import json
+from collections import defaultdict
 from src.dataset import LiteralDataset
 from src.model import LiteralEmbeddings
+from dicee.static_funcs import save_checkpoint_model
 
 
 class EpochLevelProgressBar(TQDMProgressBar):
@@ -221,4 +225,133 @@ class LiteralCallback(Callback):
             outputs["loss"] = combined_loss  # update the loss for backprop
         return super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
 
-    
+class PeriodicEvalCallback(Callback):
+    """
+    Callback to periodically evaluate the model and optionally save checkpoints during training.
+
+    Evaluates at regular intervals (every N epochs) or at explicitly specified epochs.
+    Stores evaluation reports and model checkpoints.
+    """
+
+    def __init__(self, experiment_path: str, max_epochs: int,
+                 eval_every_n_epoch: int = 0, eval_at_epochs: list = None,
+                 save_model_every_n_epoch: bool = True, n_epochs_eval_model: str = "val_test"):
+        """
+        Initialize the PeriodicEvalCallback.
+
+        Parameters
+        ----------
+        experiment_path : str
+            Directory where evaluation reports and model checkpoints will be saved.
+        max_epochs : int
+            Maximum number of training epochs.
+        eval_every_n_epoch : int, optional
+            Evaluate every N epochs. Ignored if eval_at_epochs is provided.
+        eval_at_epochs : list, optional
+            List of specific epochs at which to evaluate. If provided and non-empty, overrides eval_every_n_epoch.
+        save_model_every_n_epoch : bool, optional
+            Whether to save model checkpoints at each evaluation epoch.
+        n_epochs_eval_model : str, optional
+            Evaluation mode for N epochs. Default is "val_test".
+        """
+        super().__init__()
+        self.experiment_dir = experiment_path
+        self.max_epochs = max_epochs
+        self.epoch_counter = 0
+        self.save_model_every_n_epoch = save_model_every_n_epoch
+        self.reports = defaultdict(dict)
+        self.n_epochs_eval_model = n_epochs_eval_model
+        self.default_eval_model = None
+
+        # Determine evaluation epochs: combine explicit list and interval if provided
+        eval_epochs_set = set()
+        if eval_at_epochs and len(eval_at_epochs) > 0:
+            eval_epochs_set.update(eval_at_epochs)
+        if eval_every_n_epoch > 0:
+            eval_epochs_set.update(range(eval_every_n_epoch, max_epochs + 1, eval_every_n_epoch))
+        self.eval_epochs = eval_epochs_set
+
+        # Prepare directory for model checkpoints if needed
+        if self.save_model_every_n_epoch:
+            self.n_epochs_storage_path = os.path.join(self.experiment_dir, 'models_n_epochs')
+            os.makedirs(self.n_epochs_storage_path, exist_ok=True)
+
+    def on_fit_end(self, trainer, model):
+        """ Called at the end of training. Saves final evaluation report."""
+        if trainer.global_rank == 0:  # Only save on main process
+            report_path = os.path.join(self.experiment_dir, 'eval_report_n_epochs.json')
+            with open(report_path, 'w') as f:
+                json.dump(self.reports, f, indent=4)
+
+    def on_train_epoch_end(self, trainer, model):
+        """
+        Called at the end of each training epoch. Performs evaluation and checkpointing if scheduled.
+        """
+        # Only run on main process in distributed training
+        if trainer.global_rank != 0:
+            return
+
+        self.epoch_counter += 1
+
+        # Check if current epoch is scheduled for evaluation
+        if self.epoch_counter not in self.eval_epochs:
+            return
+
+        # Store default evaluation mode once
+        if self.default_eval_model is None:
+            self.default_eval_model = trainer.evaluator.args.eval_model
+
+        # Skip evaluation if default model already covers all eval splits and it's the final epoch
+        if self.epoch_counter == self.max_epochs:
+            default_splits = set(self.default_eval_model.split('_'))
+            required_splits = set(self.n_epochs_eval_model.split('_'))
+            if required_splits.issubset(default_splits):
+                return
+
+        # Set evaluation mode for this scheduled epoch
+        trainer.evaluator.args.eval_model = self.n_epochs_eval_model
+
+        # Use the KGE model for evaluation
+        eval_model = model.kge_model
+
+        # Save device and training mode, move to CPU for evaluation to save memory
+        device = next(eval_model.parameters()).device
+        training_mode = eval_model.training
+        eval_model.to('cpu')
+        eval_model.eval()
+
+        try:
+            # Perform evaluation
+            report = trainer.evaluator.eval(
+                dataset=trainer.entity_dataset,
+                trained_model=eval_model,
+                form_of_labelling="EntityPrediction",
+                during_training=True
+            )
+
+            # Store evaluation report
+            self.reports[f'epoch_{self.epoch_counter}_eval'] = report
+
+            # print(f"Epoch {self.epoch_counter} evaluation completed")
+
+        except Exception as e:
+            print(f"Error during evaluation at epoch {self.epoch_counter}: {e}")
+            # Store error info
+            self.reports[f'epoch_{self.epoch_counter}_eval'] = {"error": str(e)}
+
+        finally:
+            # Restore model to original device and mode
+            eval_model.to(device)
+            eval_model.train(mode=training_mode)
+
+            # Restore evaluation mode
+            trainer.evaluator.args.eval_model = self.default_eval_model
+
+        # Save model checkpoint if needed
+        if self.save_model_every_n_epoch:
+            try:
+                save_path = os.path.join(self.n_epochs_storage_path, f'model_at_epoch_{self.epoch_counter}.pt')
+                save_checkpoint_model(eval_model, path=save_path)
+                # print(f"Model checkpoint saved at epoch {self.epoch_counter}")
+            except Exception as e:
+                print(f"Error saving checkpoint at epoch {self.epoch_counter}: {e}")

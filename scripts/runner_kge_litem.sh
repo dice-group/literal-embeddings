@@ -4,13 +4,13 @@ exp_models=("TransE")  # Make sure the model name casing is correct
 dataset_names=("FB15k-237" "DB15K" "YAGO15k" "mutagenesis")
 
 embedding_dim=100
-num_epochs=256
+num_epochs=300
 
 for model in "${exp_models[@]}"; do
   for dataset in "${dataset_names[@]}"; do
 
     path_single_kg="KGs/${dataset}/${dataset}_EntityTriples.txt"
-    full_storage_path="Experiments/KGE_LitEm_all_triples/${dataset}_${num_epochs}_${embedding_dim}/${model}"
+    full_storage_path="Experiments/KGE_LitEm_all_triples/${dataset}-${model}-${embedding_dim}"
 
     echo "==========================================================="
     echo "Model: $model | Dataset: $dataset"

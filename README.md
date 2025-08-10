@@ -27,10 +27,20 @@ pip install -r requirements.txt
 The zip file KGs.zip contains all the datasets for experiments. For the first use, 
 
 
-
 ```bash
  unzip KGs.zip 
 ```
+
+Or the Latest Dataset can be downloaded from  the DICE file server:
+
+
+```bash
+wget https://files.dice-research.org/datasets/dice-embeddings/Literal_KGs.zip --no-check-certificate
+
+
+mkdir -p "KGs" && unzip Literal_KGs.zip -d "KGs"
+```
+
 ##  Experiment Types
 
 

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-
+from collections import defaultdict
 
 class LiteralDataset(Dataset):
     def __init__(self, dataset_dir, ent_idx, normalization="z-norm", sampling_ratio=None, selected_attributes=None, 
@@ -160,21 +160,33 @@ class LiteralDataset(Dataset):
 
         return df
 
+    def build_entity_index(self):
+        # Build a mapping from entity id to row indices for fast lookup
+        
+        self.entity_to_rows = defaultdict(list)
+        for idx, ent_id in enumerate(self.triples[:, 0].tolist()):
+            self.entity_to_rows[ent_id].append(idx)
+
     def get_batch(self, entity_indices, multi_regression=False):
-        # Combine data and labels into one tensor of shape [n, d+1]
-        combined = torch.cat([self.triples, self.tails_norm.unsqueeze(1)], dim=1)
+        # Ensure entity_to_rows is built
+        if not hasattr(self, "entity_to_rows"):
+            self.build_entity_index()
 
-        # Filter by whether first column matches values in entity_indices
-        mask = torch.isin(combined[:, 0], entity_indices)
-        filtered = combined[mask]
+        # Flatten all row indices for requested entities
+        entity_indices = entity_indices.tolist() if isinstance(entity_indices, torch.Tensor) else entity_indices
+        row_indices = []
+        for ent in entity_indices:
+            row_indices.extend(self.entity_to_rows.get(ent, []))
+        if not row_indices:
+            # No matching entities
+            return torch.tensor([], dtype=torch.long), torch.tensor([], dtype=torch.long), torch.tensor([], dtype=torch.float32)
 
-        # Select all triples for each entity (no random sampling)
-        selected_triples = filtered
+        selected_triples = self.triples[row_indices]
+        selected_tails_norm = self.tails_norm[row_indices]
 
-        # Extract entity indices, relation indices, and labels
         ent_ids = selected_triples[:, 0].long()
         rel_ids = selected_triples[:, 1].long()
-        labels = selected_triples[:, 2].float()
+        labels = selected_tails_norm.float()
 
         if multi_regression:
             y_true = torch.full(
