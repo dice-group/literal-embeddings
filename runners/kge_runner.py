@@ -93,6 +93,7 @@ def train_kge_model(args):
                 embedding_dims=args.embedding_dim,
                 dropout=getattr(args, 'dropout', 0.15),
                 gate_residual=getattr(args, 'gate_residual', False),
+                freeze_entity_embeddings=args.freeze_entity_embeddings_combined,
             )
         else:
             Literal_model = LiteralEmbeddingsExt(
@@ -100,6 +101,7 @@ def train_kge_model(args):
                 embedding_dims=args.embedding_dim,
                 dropout=getattr(args, 'dropout', 0.3),
                 gate_residual=False,
+                freeze_entity_embeddings=args.freeze_entity_embeddings_combined,
             )
 
     kge_model, _ = intialize_model(vars(args), 0)

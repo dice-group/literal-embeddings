@@ -111,12 +111,14 @@ class LiteralEmbeddingsExt(nn.Module):
         embedding_dims: int,
         dropout: float = 0.3,
         gate_residual=True,
+        freeze_entity_embeddings=False,
     ):
         super().__init__()
         self.embedding_dim = embedding_dims
         self.num_of_data_properties = num_of_data_properties
         self.hidden_dim = embedding_dims * 2  # Combined entity + attribute embeddings
         self.gate_residual = gate_residual
+        self.freeze_entity_embeddings = freeze_entity_embeddings
 
         #  data property (literal) embeddings
         self.data_property_embeddings = nn.Embedding(
@@ -144,6 +146,8 @@ class LiteralEmbeddingsExt(nn.Module):
         """
         # Use provided entity embeddings directly
         e_emb = entity_embeddings  # [batch, emb_dim]
+        if self.freeze_entity_embeddings:
+            e_emb = e_emb.detach()
         a_emb = self.data_property_embeddings(attr_idx)  # [batch, emb_dim]
 
         # Concatenate entity and property embeddings
@@ -312,6 +316,7 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
         embedding_dims: int,
         dropout: float = 0.15,
         gate_residual=False,
+        freeze_entity_embeddings=False,
     ):
         super().__init__()
         self.embedding_dim = embedding_dims
@@ -369,6 +374,8 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
         """
         # Use provided entity embeddings directly
         e_emb = entity_embeddings  # [batch, emb_dim]
+        if self.freeze_entity_embeddings:
+            e_emb = e_emb.detach()
         a_emb = self.data_property_embeddings(attr_idx)  # [batch, emb_dim]
 
         # Concatenate entity and property embeddings

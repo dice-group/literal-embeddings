@@ -396,16 +396,16 @@ def get_default_arguments(args_list=None):
         help="Number of epochs for deferred literal training for KGE Model. Set to 0 to disable.",
     )
     parser.add_argument(
-        "--freeze_entity_embeddings",
-        action="store_true",
-        default=True,
-        help="Freeze entity embeddings during training.",
-    )
-    parser.add_argument(
         "--gate_residual",
         action="store_true",
         default=True,
         help="Use gate residual connections in Literal Embedding Model.",
+    )
+    parser.add_argument(
+        "--freeze_entity_embeddings_combined",
+        action="store_true",
+        default=False,
+        help="Freeze entity embeddings during combined training.",
     )
     parser.add_argument(
         "--use_clifford_attention",
