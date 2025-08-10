@@ -113,6 +113,9 @@ def train_literals(args):
         if not args.freeze_entity_embeddings:
             args.full_storage_path += "_emb_updated"
 
+        if configs.get("combined_training"):
+            args.full_storage_path += "/combined"
+
     literal_dataset = LiteralDataset(
         dataset_dir=args.dataset_dir, 
         ent_idx=e2idx, 

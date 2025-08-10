@@ -17,6 +17,7 @@ from evaluate import Evaluator
 import json
 from pytorch_lightning.callbacks.stochastic_weight_avg import \
     StochasticWeightAveraging as SWA
+from pytorch_lightning.callbacks import EarlyStopping
 
 # Map model names to model classes
 model_mapping = {
@@ -142,6 +143,19 @@ def main(args):
     
     # Setup callbacks
     callbacks  = []
+    
+    # Add early stopping callback
+    if hasattr(args, 'early_stopping') and args.early_stopping:
+        early_stop_callback = EarlyStopping(
+            monitor="val_mrr",
+            min_delta=args.min_delta,
+            patience=args.patience,
+            verbose=True,
+            mode="max"  # We want to maximize MRR
+        )
+        callbacks.append(early_stop_callback)
+        print(f"Using early stopping: monitoring val_mrr with patience={args.patience}")
+    
     if args.swa:
         callbacks.append(SWA(swa_epoch_start=1, swa_lrs=args.lr))
         print("Using Stochastic Weight Averaging (SWA)")
@@ -157,11 +171,13 @@ def main(args):
         accelerator="gpu" if args.cuda and torch.cuda.is_available() else "cpu",
         logger=False,
         enable_checkpointing=False,
-        enable_progress_bar= True,callbacks=callbacks,
+        enable_progress_bar=True,
+        callbacks=callbacks,
+        check_val_every_n_epoch=args.val_check_interval if hasattr(args, 'val_check_interval') else 3,
     )
 
     # Train model
-    trainer.fit(lit_model, train_loader, test_loader)
+    trainer.fit(lit_model, train_loader)
 
 if __name__ == '__main__':
     args = parse_args()

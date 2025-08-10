@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from model import *
 import json
+from pytorch_lightning.callbacks import EarlyStopping
 
 class LitModel(pl.LightningModule):
     """PyTorch Lightning module for knowledge graph embedding models"""
@@ -58,6 +59,8 @@ class LitModel(pl.LightningModule):
                 scale = torch.log1p(
                     2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
                 ).detach()
+                # Bound scale between, for example, 0.1 and 0.9
+                scale = torch.clamp(scale, min=0.0001, max=0.9999999)
                 total_loss = (1 - scale) * ent_loss + scale * lit_loss
             else:
                 # Static weighting
@@ -67,6 +70,19 @@ class LitModel(pl.LightningModule):
 
         self.log("train_loss", total_loss, prog_bar=True)
         return total_loss
+
+    def on_validation_epoch_end(self):
+        """Compute validation MRR using evaluator for early stopping"""
+        if self.evaluator is None:
+            return
+            
+        # Use evaluator to get validation MRR
+        eval_results = self.evaluator.evaluate(self.model, eval_mode='val')
+        
+        if eval_results and 'val' in eval_results:
+            val_mrr = eval_results['val'].get('MRR', 0.0)
+            self.log("val_mrr", val_mrr, prog_bar=True, sync_dist=True)
+            print(f"Validation MRR: {val_mrr:.4f}")
 
     def configure_optimizers(self):
         """Configure Adam optimizer"""
