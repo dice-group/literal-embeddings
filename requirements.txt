@@ -1,2 +1,2 @@
-git+https://github.com/dice-group/dice-embeddings.git@af2b131#egg=dicee
+git+https://github.com/dice-group/dice-embeddings.git@de3801e#egg=dicee
 pre-commit

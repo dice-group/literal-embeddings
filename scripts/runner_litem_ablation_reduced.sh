@@ -2,9 +2,9 @@
 
 model="TransE"
 datasets=("YAGO15k" "FB15k-237")
-
+embedding_dim=100
 for dataset in "${datasets[@]}"; do
-  exp_dir="Experiments/KGE_LitEm_all_triples/${dataset}_256_100/${model}"
+  exp_dir="Experiments/KGE_LitEm_all_triples/${dataset}-${model}-${embedding_dim}"
 
   for ratio in 100 80 60 40 20; do
     sampling_ratio=$(echo "$ratio / 100" | bc -l)

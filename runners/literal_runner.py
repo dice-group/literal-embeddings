@@ -76,7 +76,8 @@ def reset_random_seeds(seed, run=0):
 
 def train_literals(args):
     """Train literal embeddings using a pre-trained KGE model."""
-
+    # freeze entity embeddings if the flag is set
+    freeze_entity_embeddings = not args.update_entity_embeddings
     # Apply best configuration if available
     args = apply_best_config_to_args(args)
 
@@ -108,7 +109,7 @@ def train_literals(args):
 
     if not args.full_storage_path:
         args.full_storage_path = (
-            f"Experiments/Literals/{dataset_name}/{args.model}_{args.embedding_dim}_{args.literal_model}"
+            f"Experiments/Literals/{dataset_name}/{args.model}_{args.embedding_dim}"
         )
         if not args.freeze_entity_embeddings:
             args.full_storage_path += "_emb_updated"
@@ -138,7 +139,9 @@ def train_literals(args):
         # Set different seeds per run if needed
         # Clear caches before each run
         clear_cuda_cache()
+
         
+
         # Reset seeds for reproducibility
         reset_random_seeds(args.random_seed, run)
 
@@ -148,7 +151,7 @@ def train_literals(args):
                 num_of_data_properties=literal_dataset.num_data_properties,
                 embedding_dims=kge_model.embedding_dim,
                 entity_embeddings=kge_model.entity_embeddings,
-                freeze_entity_embeddings=args.freeze_entity_embeddings,
+                freeze_entity_embeddings=freeze_entity_embeddings,
                 gate_residual=args.gate_residual,
                 dropout=getattr(args, 'dropout', 0.15),
             )
@@ -157,7 +160,7 @@ def train_literals(args):
                 num_of_data_properties=literal_dataset.num_data_properties,
                 embedding_dims=kge_model.embedding_dim,
                 entity_embeddings=kge_model.entity_embeddings,
-                freeze_entity_embeddings=args.freeze_entity_embeddings,
+                freeze_entity_embeddings=freeze_entity_embeddings,
                 dropout=getattr(args, 'dropout', 0.3),
                 gate_residual=getattr(args, 'gate_residual', True),
             )

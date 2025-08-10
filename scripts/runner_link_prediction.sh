@@ -1,8 +1,8 @@
 #!/bin/bash
 
-models=("TransE" "DistMult" "Keci" "ComplEx" "OMult" "QMult" "DeCaL" "Pykeen_MuRE")
-datasets=("FB15k-237" "DB15K" "YAGO15k" "mutagenesis")
-epochs=256
+models=("DistMult" "Keci" "ComplEx" "OMult" "QMult" "DualE" "DeCaL")
+datasets=("FB15k-237" "YAGO15k" "DB15K" "mutagenesis")
+epochs=500
 
 for model in "${models[@]}"
 do
@@ -15,9 +15,9 @@ do
       echo "=================================="
 
       if [ "$mode" == "combined" ]; then
-        python main.py --dataset_dir "KGs/$dataset" --model "$model" --combined_training --num_epochs $epochs 
+        python main.py --dataset_dir "KGs/$dataset" --model "$model" --combined_training --num_epochs $epochs --num_core 20 --eval_every_n_epochs 50
       else
-        python main.py --dataset_dir "KGs/$dataset" --model "$model" --num_epochs $epochs
+        python main.py --dataset_dir "KGs/$dataset" --model "$model" --num_epochs $epochs --num_core 20 --eval_every_n_epochs 50
       fi
 
       echo

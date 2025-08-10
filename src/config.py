@@ -223,6 +223,11 @@ def get_default_arguments(args_list=None):
         default=1,
         help="Seed for all, see pl seed_everything().",
     )
+    parser.add_argument(
+        "--use_manual_training",
+        action="store_true",
+        help="Use manual training loop instead of PyTorch Lightning for exact reproducibility.",
+    )
     parser.add_argument("--p", type=int, default=0, help="P for Clifford Algebra")
     parser.add_argument("--q", type=int, default=1, help="Q for Clifford Algebra")
     parser.add_argument("--pykeen_model_kwargs", type=json.loads, default={})
@@ -391,16 +396,16 @@ def get_default_arguments(args_list=None):
         help="Number of epochs for deferred literal training for KGE Model. Set to 0 to disable.",
     )
     parser.add_argument(
-        "--freeze_entity_embeddings",
-        action="store_true",
-        default=True,
-        help="Freeze entity embeddings during training.",
-    )
-    parser.add_argument(
         "--gate_residual",
         action="store_true",
         default=True,
         help="Use gate residual connections in Literal Embedding Model.",
+    )
+    parser.add_argument(
+        "--freeze_entity_embeddings_combined",
+        action="store_true",
+        default=False,
+        help="Freeze entity embeddings during combined training.",
     )
     parser.add_argument(
         "--use_clifford_attention",
@@ -408,9 +413,31 @@ def get_default_arguments(args_list=None):
         default=True,
         help="Use Clifford attention mechanism in Clifford Literal Embedding Model.",
     )
+
     parser.add_argument(
         "--multi_regression",
         action="store_true",
         help="Perform multi-output regression for Literal Embedding model.",
     )
+    parser.add_argument("--update_entity_embeddings", action="store_true", default=False,
+                   help="Allow entity embeddings to be updated during training")
+    
+     # Learning rate scheduling with configuration
+    parser.add_argument("--adaptive_lr", type=json.loads, default={},
+                        help='Enable adaptive learning rate scheduling with configuration. '
+                             'Example: {"scheduler_name": "cca", "lr_min": 0.01, "num_cycles": 10, '
+                             '"weighted_ensemble": true, "n_snapshots": 5}. '
+                             'Available schedulers: cca, mmcclr, deferred_cca, deferred_mmcclr')
+    parser.add_argument("--swa_start_epoch", type=int, default=None,
+                        help='Epoch at which to start applying stochastic weight averaging.')
+    parser.add_argument('--eval_every_n_epochs', type=int, default=0,
+                        help='Evaluate model every n epochs. If 0, no evaluation is applied.')
+    parser.add_argument('--save_every_n_epochs', action='store_true',
+                        help='Save model every n epochs. If True, save model at every epoch.')
+    parser.add_argument('--eval_at_epochs',type=int,nargs='+', default=None,
+        help="List of epoch numbers at which to evaluate the model (e.g., 1 5 10).")
+    parser.add_argument("--n_epochs_eval_model", type=str, default="val_test",
+                        choices=["None", "train", "train_val", "train_val_test", "val_test", "val", "train_test","test"],
+                        help='Evaluating link prediction performance on data splits while performing periodic evaluation.')
+
     return parser.parse_args(args_list)
