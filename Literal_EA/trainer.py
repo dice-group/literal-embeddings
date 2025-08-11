@@ -11,7 +11,7 @@ class LitModel(pl.LightningModule):
     def __init__(self, args, train_dataset, kwargs, model_mapping, evaluator=None, er_vocab=None, 
                  literal_model=None, literal_dataset=None):
         super().__init__()
-        self.save_hyperparameters()
+        # self.save_hyperparameters()  # Disabled: user saves models manually
         self.args = args
         self.model_name = args.model
         self.model_mapping = model_mapping
