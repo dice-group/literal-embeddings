@@ -415,6 +415,51 @@ def evaluate_link_prediction_performance_with_reciprocals(model, triples,
     results = {'H@1': hit_1, 'H@3': hit_3, 'H@10': hit_10, 'MRR': mean_reciprocal_rank}
     return results
 
+def get_avg_df(input_df: pd.DataFrame, only_MAE= False) -> pd.DataFrame:
+    """
+    Averages the results across runs for each relation.
+    
+    Parameters:
+    - input_df: DataFrame containing results with columns for each run.
+    
+    Returns:
+    - DataFrame with averaged results across runs.
+    """
+    avg_df = input_df.copy()
+    avg_df["relation"] = avg_df["relation"].astype(str)
+    mae_cols = [col for col in avg_df.columns if "MAE" in col]
+    rmse_cols = [col for col in avg_df.columns if "RMSE" in col]
+    # Compute the mean across runs
+    if only_MAE:
+        avg_df["MAE"] = avg_df[mae_cols].mean(axis=1)
+        avg_df = avg_df[["relation", "MAE"]]
+    else:
+        avg_df["MAE"] = avg_df[mae_cols].mean(axis=1)
+        avg_df["RMSE"] = avg_df[rmse_cols].mean(axis=1)
+        avg_df = avg_df[["relation", "MAE", "RMSE"]]
+
+    return avg_df
+
+def get_overview_df(base_dir:str, only_MAE:bool = True) -> pd.DataFrame:
+    final_df = pd.DataFrame()
+    for dir in os.listdir(base_dir):
+        dir_report = os.path.join(base_dir, dir, "lit_eval_results.csv")
+        dir_df = pd.read_csv(dir_report)
+        avg_df = get_avg_df(dir_df, only_MAE=only_MAE)
+
+        avg_df.rename(
+                    columns={
+                        col: f"{col}_{dir}" for col in avg_df.columns if col != "relation"
+                    },
+                    inplace=True,
+                )
+        if final_df.empty:
+            final_df = avg_df.copy()
+        else:
+            final_df = pd.merge(final_df, avg_df, on="relation", how="left")
+    pd.set_option('display.float_format', '{:.5f}'.format)
+
+    return final_df
 
 def get_full_storage_path(args):
     """
@@ -481,53 +526,3 @@ def get_full_storage_path(args):
         embedding_dim = getattr(args, 'embedding_dim', 'unknown_dim')
         return f"{base_path}/{model_name}_{embedding_dim}"
     
-
-def create_training_report(args, model, dataset, start_time, end_time, additional_info=None):
-    """
-    Create a training report with the exact same structure as the existing format.
-    
-    Args:
-        args: Training arguments
-        model: Trained model
-        dataset: Dataset object
-        start_time: Training start time
-        end_time: Training end time
-        additional_info: Additional information to include in report
-    """
-    
-    # Calculate model size and parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    model_size_mb = total_params * 4 / (1024 * 1024)  # Assuming float32 (4 bytes per param)
-    
-    # Extract dataset information
-    num_entities = getattr(dataset, 'num_entities', None)
-    num_relations = getattr(dataset, 'num_relations', None)
-    num_train_triples = len(dataset.train_set) if hasattr(dataset, 'train_set') else None
-    
-    # Calculate runtime
-    runtime_seconds = end_time - start_time
-    
-    # Build the report with exact same structure
-    report = {
-        "num_train_triples": num_train_triples,
-        "num_entities": num_entities,
-        "num_relations": num_relations,
-        "max_length_subword_tokens": None,
-        "runtime_kg_loading": getattr(args, '_kg_loading_time', None),
-        "EstimatedSizeMB": model_size_mb,
-        "NumParam": total_params,
-        "path_experiment_folder": getattr(args, 'full_storage_path', None),
-        "Runtime": runtime_seconds
-    }
-    
-    return report
-
-def save_training_report(report, save_path):
-    """Save the training report to a JSON file"""
-    report_path = os.path.join(save_path, "report.json")
-    
-    with open(report_path, 'w') as f:
-        json.dump(report, f, indent=4)
-    
-    print(f"Training report saved to: {report_path}")
-    return report_path

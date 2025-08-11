@@ -116,6 +116,9 @@ def train_literals(args):
         if args.no_residual:
             args.full_storage_path += "_no_res"
 
+        if configs.get("combined_training"):
+            args.full_storage_path += "/combined"
+
     literal_dataset = LiteralDataset(
         dataset_dir=args.dataset_dir, 
         ent_idx=e2idx, 
