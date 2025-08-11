@@ -413,7 +413,12 @@ def get_default_arguments(args_list=None):
         default=True,
         help="Use Clifford attention mechanism in Clifford Literal Embedding Model.",
     )
-
+    parser.add_argument(
+        "--no_residual",
+        action="store_true",
+        default=False,
+        help="Disable residual connections in Literal Embedding Model.",
+    )
     parser.add_argument(
         "--multi_regression",
         action="store_true",

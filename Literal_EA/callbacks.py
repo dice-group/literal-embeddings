@@ -1,4 +1,7 @@
 import torch
+import os
+import json
+from collections import defaultdict
 from pytorch_lightning import Callback
 
 
@@ -127,3 +130,106 @@ class ASWA(Callback):
             # print(f"| MRR Running {val_running_model:.4f} | MRR ASWA: {self.val_aswa:.4f} |ASWA|:{sum(self.alphas)}")
             # (8) Decide whether ASWA should be updated via the current running model.
             self.decide(model.model.state_dict(), ensemble_state_dict, val_running_model, mrr_updated_ensemble_model)
+
+class PeriodicEvalCallback(Callback):
+    """
+    Callback to periodically evaluate the model and optionally save checkpoints during training.
+
+    Evaluates at regular intervals (every N epochs) or at explicitly specified epochs.
+    Stores evaluation reports and model checkpoints.
+    """
+
+    def __init__(self, experiment_path: str, max_epochs: int,
+                 eval_every_n_epoch: int = 0, eval_at_epochs: list = None,
+                 save_model_every_n_epoch: bool = True, n_epochs_eval_model: str = "val_test"):
+        """
+        Initialize the PeriodicEvalCallback.
+
+        Parameters
+        ----------
+        experiment_path : str
+            Directory where evaluation reports and model checkpoints will be saved.
+        max_epochs : int
+            Maximum number of training epochs.
+        eval_every_n_epoch : int, optional
+            Evaluate every N epochs. Ignored if eval_at_epochs is provided.
+        eval_at_epochs : list, optional
+            List of specific epochs at which to evaluate. If provided and non-empty, overrides eval_every_n_epoch.
+        save_model_every_n_epoch : bool, optional
+            Whether to save model checkpoints at each evaluation epoch.
+        n_epochs_eval_model : str, optional
+            Evaluation mode for N epochs. Default is "val_test".
+        """
+        super().__init__()
+        self.experiment_dir = experiment_path
+        self.max_epochs = max_epochs
+        self.epoch_counter = 0
+        self.save_model_every_n_epoch = save_model_every_n_epoch
+        self.reports = defaultdict(dict)
+        self.n_epochs_eval_model = n_epochs_eval_model
+        self.default_eval_model = None
+
+        # Determine evaluation epochs: combine explicit list and interval if provided
+        eval_epochs_set = set()
+        if eval_at_epochs and len(eval_at_epochs) > 0:
+            eval_epochs_set.update(eval_at_epochs)
+        if eval_every_n_epoch > 0:
+            eval_epochs_set.update(range(eval_every_n_epoch, max_epochs + 1, eval_every_n_epoch))
+        self.eval_epochs = eval_epochs_set
+
+        # Prepare directory for model checkpoints if needed
+        if self.save_model_every_n_epoch:
+            self.n_epochs_storage_path = os.path.join(self.experiment_dir, 'models_n_epochs')
+            os.makedirs(self.n_epochs_storage_path, exist_ok=True)
+
+    def on_fit_end(self, trainer, model):
+        """ Called at the end of training. Saves final evaluation report."""
+        if trainer.global_rank == 0:  # Only save on main process
+            report_path = os.path.join(self.experiment_dir, 'eval_report_n_epochs.json')
+            with open(report_path, 'w') as f:
+                json.dump(self.reports, f, indent=4)
+
+    def on_train_epoch_end(self, trainer, model):
+        """
+        Called at the end of each training epoch. Performs evaluation and checkpointing if scheduled.
+        """
+        # Only run on main process in distributed training
+        if trainer.global_rank != 0:
+            return
+
+        self.epoch_counter += 1
+
+        # Only evaluate if current epoch is in eval_epochs
+        if self.epoch_counter not in self.eval_epochs:
+            return
+
+        # Use the main model for evaluation (consistent with ASWA callback)
+        eval_model = model.model
+
+        # Save device and training mode, move to CPU for evaluation to save memory
+        device = getattr(model, "device", None)
+        if device is None:
+            device = next(eval_model.parameters()).device
+        training_mode = eval_model.training
+        # eval_model.to('cpu')
+        eval_model.eval()
+
+        try:
+            # Only evaluate on the test set
+            report = model.evaluator.evaluate(eval_model, eval_mode=self.n_epochs_eval_model, log=False)
+            self.reports[f'epoch_{self.epoch_counter}_eval'] = report
+        except Exception as e:
+            print(f"Error during evaluation at epoch {self.epoch_counter}: {e}")
+            self.reports[f'epoch_{self.epoch_counter}_eval'] = {"error": str(e)}
+        finally:
+            # Restore model to original device and mode
+            # eval_model.to(device)
+            eval_model.train(mode=training_mode)
+
+        # Save model checkpoint if needed
+        if self.save_model_every_n_epoch:
+            try:
+                save_path = os.path.join(self.n_epochs_storage_path, f'model_at_epoch_{self.epoch_counter}.pt')
+                torch.save(eval_model.state_dict(), save_path)
+            except Exception as e:
+                print(f"Error saving checkpoint at epoch {self.epoch_counter}: {e}")

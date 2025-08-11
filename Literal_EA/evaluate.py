@@ -37,11 +37,13 @@ class Evaluator:
                 print("Validation Scores")
                 print(val_scores)
         
-        eval_report = {
-            'train': train_scores if 'train' in eval_mode else None,
-            'test': test_scores if 'test' in eval_mode else None,
-            'val': val_scores if 'val' in eval_mode else None,
-        }
+        eval_report = {}
+        if train_scores is not None:
+            eval_report['train'] = train_scores
+        if test_scores is not None:
+            eval_report['test'] = test_scores
+        if val_scores is not None:
+            eval_report['val'] = val_scores
         return eval_report
     
     @torch.no_grad()

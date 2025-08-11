@@ -25,6 +25,7 @@ class LiteralEmbeddings(nn.Module):
         dropout: float = 0.3,
         gate_residual=True,
         freeze_entity_embeddings=True,
+        no_residual=False
     ):
         super().__init__()
         self.embedding_dim = embedding_dims
@@ -32,6 +33,7 @@ class LiteralEmbeddings(nn.Module):
         self.hidden_dim = embedding_dims * 2  # Combined entity + attribute embeddings
         self.gate_residual = gate_residual
         self.freeze_entity_embeddings = freeze_entity_embeddings
+        self.no_residual = no_residual
 
 
         # Use pre-trained entity embeddings
@@ -74,14 +76,16 @@ class LiteralEmbeddings(nn.Module):
         z = self.dropout(
             F.relu(self.layer_norm(self.fc(tuple_emb)))
         )  # [batch, 2 * emb_dim]
-
-        if self.gate_residual:
-            # Gated residual logic (inline GLU)
-            x_proj = self.gated_residual_proj(torch.cat((z, tuple_emb), dim=1))  # [batch, 4 * emb_dim]
-            value, gate = x_proj.chunk(2, dim=-1)
-            residual = value * torch.sigmoid(gate)
+        if self.no_residual:
+            residual = z
         else:
-            residual = z + tuple_emb  # Simple residual
+                if self.gate_residual:
+                    # Gated residual logic (inline GLU)
+                    x_proj = self.gated_residual_proj(torch.cat((z, tuple_emb), dim=1))  # [batch, 4 * emb_dim]
+                    value, gate = x_proj.chunk(2, dim=-1)
+                    residual = value * torch.sigmoid(gate)
+                else:
+                    residual = z + tuple_emb  # Simple residual
 
         # Output scalar prediction and flatten to 1D
         out = self.fc_out(residual).flatten()  # [batch]

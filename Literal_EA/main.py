@@ -4,7 +4,7 @@ import numpy as np
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 from config import parse_args
-from callbacks import ASWA
+from callbacks import ASWA, PeriodicEvalCallback
 from litem import LiteralEmbeddings
 
 # Set float32 matmul precision for better performance
@@ -151,6 +151,10 @@ def main(args):
     else:
         print("Not using weight averaging")
     
+    if args.eval_every_n_epochs > 0 or args.eval_at_epochs is not None:
+        callbacks.append(PeriodicEvalCallback(experiment_path=args.exp_dir, max_epochs=args.num_iterations,
+                        eval_every_n_epoch=args.eval_every_n_epochs, eval_at_epochs=args.eval_at_epochs,
+                        save_model_every_n_epoch=args.save_every_n_epochs, n_epochs_eval_model=args.n_epochs_eval_model))
     # Initialize trainer
     trainer = pl.Trainer(
         max_epochs=args.num_iterations,

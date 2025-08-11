@@ -111,8 +111,10 @@ def train_literals(args):
         args.full_storage_path = (
             f"Experiments/Literals/{dataset_name}/{args.model}_{args.embedding_dim}"
         )
-        if not args.freeze_entity_embeddings:
+        if  args.update_entity_embeddings:
             args.full_storage_path += "_emb_updated"
+        if args.no_residual:
+            args.full_storage_path += "_no_res"
 
     literal_dataset = LiteralDataset(
         dataset_dir=args.dataset_dir, 
