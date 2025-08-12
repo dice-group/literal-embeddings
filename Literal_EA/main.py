@@ -90,7 +90,7 @@ def main(args):
         num_workers=10, collate_fn=collate_fn)
     test_loader = DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=1, collate_fn=collate_fn)
+        num_workers=10, collate_fn=collate_fn)
     
     # Model configuration
     kwargs = {
