@@ -44,7 +44,8 @@ def parse_args():
     parser.add_argument("--patience", type=int, default=5, help="Early stopping patience (epochs)")
     parser.add_argument("--val_check_interval", type=int, default=1, help="Validate every N epochs")
     parser.add_argument("--min_delta", type=float, default=0.001, help="Minimum change in validation metric")
-    
+    parser.add_argument("--num_core", type=int, default=4, help="Number of CPU cores to use")
+
     args = parser.parse_args()
     
     # Set model-specific epoch limits based on experimental setup

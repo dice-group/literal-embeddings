@@ -84,14 +84,14 @@ def main(args):
     # Create data loaders
     train_loader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True,
-        num_workers=10, collate_fn=collate_fn)
+        num_workers=args.num_core, collate_fn=collate_fn)
     val_loader = DataLoader(
         val_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=10, collate_fn=collate_fn)
+        num_workers=args.num_core, collate_fn=collate_fn)
     test_loader = DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=10, collate_fn=collate_fn)
-    
+        num_workers=args.num_core, collate_fn=collate_fn)
+
     # Model configuration
     kwargs = {
         "input_dropout": args.input_dropout,
