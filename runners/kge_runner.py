@@ -31,7 +31,11 @@ def train_kge_model(args):
             exp_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
             args.full_storage_path = f"Test_runs/{exp_time}"
         elif args.combined_training:
-            args.full_storage_path = f"Experiments/KGE_Combined/{dataset_name}_combined/{args.model}"
+            
+            if args.freeze_entity_embeddings_combined:
+                args.full_storage_path = f"Experiments/KGE_Combined/{dataset_name}_combined_frozen/{args.model}"
+            else:
+                args.full_storage_path = f"Experiments/KGE_Combined/{dataset_name}_combined/{args.model}"
         else:
             args.full_storage_path = f"Experiments/KGE/{dataset_name}/{args.model}"
     os.makedirs(args.full_storage_path, exist_ok=True)
