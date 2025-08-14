@@ -60,7 +60,6 @@ class LitModel(pl.LightningModule):
                     2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
                 ).detach()
                 # Bound scale between, for example, 0.1 and 0.9
-                scale = torch.clamp(scale, min=0.0001, max=0.9999999)
                 total_loss = (1 - scale) * ent_loss + scale * lit_loss
             else:
                 # Static weighting

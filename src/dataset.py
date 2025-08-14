@@ -161,42 +161,70 @@ class LiteralDataset(Dataset):
         return df
 
     def build_entity_index(self):
-        # Build a mapping from entity id to row indices for fast lookup
-        
-        self.entity_to_rows = defaultdict(list)
-        for idx, ent_id in enumerate(self.triples[:, 0].tolist()):
-            self.entity_to_rows[ent_id].append(idx)
 
-    def get_batch(self, entity_indices, multi_regression=False):
-        # Ensure entity_to_rows is built
-        if not hasattr(self, "entity_to_rows"):
+        entity_to_rows = defaultdict(list)
+        triples_cpu = self.triples[:, 0].cpu().numpy()
+        for row_id, ent_id in enumerate(triples_cpu):
+            entity_to_rows[ent_id].append(row_id)
+
+        num_entities = max(entity_to_rows.keys()) + 1
+        max_rows = max((len(r) for r in entity_to_rows.values()), default=0)
+
+        # Fill with -1 padding
+        matrix = np.full((num_entities, max_rows), -1, dtype=np.int64)
+        counts = np.zeros((num_entities,), dtype=np.int64)
+
+        for ent_id, rows in entity_to_rows.items():
+            rows_arr = np.array(rows, dtype=np.int64)
+            matrix[ent_id, : len(rows_arr)] = rows_arr
+            counts[ent_id] = len(rows_arr)
+
+        # Store on the same device as triples for zero-copy access
+        device = self.triples.device
+        self.entity_row_matrix = torch.from_numpy(matrix).to(device)
+        self.entity_row_counts = torch.from_numpy(counts).to(device)
+
+    def get_batch(self, entity_indices):
+        if not hasattr(self, "entity_row_matrix"):
             self.build_entity_index()
 
-        # Flatten all row indices for requested entities
-        entity_indices = entity_indices.tolist() if isinstance(entity_indices, torch.Tensor) else entity_indices
-        row_indices = []
-        for ent in entity_indices:
-            row_indices.extend(self.entity_to_rows.get(ent, []))
-        if not row_indices:
-            # No matching entities
-            return torch.tensor([], dtype=torch.long), torch.tensor([], dtype=torch.long), torch.tensor([], dtype=torch.float32)
+        # Ensure entity_indices is tensor on the same device as entity_row_matrix
+        device = self.entity_row_matrix.device
+        if not isinstance(entity_indices, torch.Tensor):
+            entity_idx = torch.as_tensor(entity_indices, dtype=torch.long, device=device)
+        else:
+            entity_idx = entity_indices.to(device).long()
 
-        selected_triples = self.triples[row_indices]
-        selected_tails_norm = self.tails_norm[row_indices]
+        max_ent = self.entity_row_matrix.shape[0] - 1
+        valid_mask = (entity_idx >= 0) & (entity_idx <= max_ent)
+        if not valid_mask.any():
+            return (
+                torch.empty(0, dtype=torch.long, device=device),
+                torch.empty(0, dtype=torch.long, device=device),
+                torch.empty(0, dtype=torch.float32, device=device),
+            )
+
+        entity_idx = entity_idx[valid_mask]
+
+        rows_for_batch = self.entity_row_matrix[entity_idx]  # (batch_size, max_rows)
+        valid_rows_mask = rows_for_batch >= 0
+        if not valid_rows_mask.any():
+            return (
+                torch.empty(0, dtype=torch.long, device=device),
+                torch.empty(0, dtype=torch.long, device=device),
+                torch.empty(0, dtype=torch.float32, device=device),
+            )
+
+        flat_row_indices = rows_for_batch[valid_rows_mask].long()
+
+        selected_triples = self.triples.index_select(0, flat_row_indices)
+        selected_tails_norm = self.tails_norm.index_select(0, flat_row_indices)
 
         ent_ids = selected_triples[:, 0].long()
         rel_ids = selected_triples[:, 1].long()
         labels = selected_tails_norm.float()
 
-        if multi_regression:
-            y_true = torch.full(
-                (len(ent_ids), self.num_data_properties), -9.0, dtype=torch.float32
-            )
-            y_true[torch.arange(len(ent_ids)), rel_ids] = labels
-        else:
-            y_true = labels
-
-        return ent_ids, rel_ids, y_true
+        return ent_ids, rel_ids, labels
 
 
     def get_ea_encoding(self):
