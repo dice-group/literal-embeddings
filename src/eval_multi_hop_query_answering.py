@@ -115,14 +115,25 @@ def get_default_arguments():
     return parser.parse_args()
 
 
-def display(results):
+def display(results, experiment_dir):
+    all_dfs = []
     for (kg_name, config, df) in results:
-        print(f"{kg_name}\tAdaptive SWA:{config['adaptive_swa']}\t SWA:{config['swa']}")
+        df.insert(0, "Model", kg_name)  # Optionally add model name as a column
+        all_dfs.append(df)
+        print(f"{kg_name}")
         print(df)
         print("#")
-
-        print(df["MRR"].to_latex(index=False))
+    if all_dfs:
+        final_df = pd.concat(all_dfs, ignore_index=True)
+        print("Final combined DataFrame:")
+        print(final_df)
+        if experiment_dir is not None:
+            os.makedirs(experiment_dir, exist_ok=True)
+            out_path = os.path.join(experiment_dir, "all_multi_hop_results.csv")
+            final_df.to_csv(out_path, index=False)
+            print(f"Saved combined results to {out_path}")
 
 
 if __name__ == '__main__':
-    display(eval_multi_hop_query_answering(get_default_arguments()))
+    args = get_default_arguments()
+    display(eval_multi_hop_query_answering(args), args.experiment_dir)
