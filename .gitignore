@@ -27,3 +27,4 @@ __pycache__/
 
 **/.vscode/
 Literal_KGs.zip
+plots/*
