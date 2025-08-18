@@ -54,6 +54,7 @@ class KGE_Literal(LightningModule):
             scale = torch.log1p(
                 2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
             ).detach()
+            scale = torch.clamp(scale, min = 1e-9, max= 0.99999)
             total_loss = (1 - scale) * ent_loss + scale * lit_loss
             return total_loss
 
