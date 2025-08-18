@@ -1,4 +1,5 @@
 from datetime import datetime
+from polars import head
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -25,7 +26,8 @@ class KGE_Literal(LightningModule):
         return self.kge_model(x)
 
     def training_step(self, batch, batch_idx):
-        train_X, train_y = batch
+        train_X_triple, train_y = batch
+        train_X = train_X_triple[:, :2]
         train_X, train_y = train_X.to(self.device), train_y.to(self.device)
 
         # Always train KGE model
@@ -35,7 +37,11 @@ class KGE_Literal(LightningModule):
 
         if self.Literal_model and  self.current_epoch > self.args.deferred_literal_training_epochs:
             # Literal model forward
-            entity_ids = train_X[:, 0].long()
+            head = train_X_triple[:, 0].long()
+            tail = train_X_triple[:, 2].long()
+
+            # Example: stacking head and tail together along a new dimension
+            entity_ids = torch.stack([head, tail], dim=1)  # shape [num_triples, 2]
             lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(entity_ids)
             lit_entities, lit_properties, y_true = (
                 lit_entities.to(self.device),

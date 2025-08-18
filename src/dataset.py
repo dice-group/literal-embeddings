@@ -5,6 +5,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from collections import defaultdict
+from dicee.static_preprocess_funcs import mapping_from_first_two_cols_to_third
 
 class LiteralDataset(Dataset):
     def __init__(self, dataset_dir, ent_idx, normalization="z-norm", sampling_ratio=None, selected_attributes=None, 
@@ -307,3 +308,28 @@ class LiteralDataset(Dataset):
                 f"Unsupported normalization type: {normalization_params['type']}. "
                 f"Supported types: 'z-norm', 'min-max', or None."
             )
+
+class KvsAll(torch.utils.data.Dataset):
+    def __init__(self, train_set_idx: np.ndarray, entity_idxs, relation_idxs, form, store=None,
+                 label_smoothing_rate: float = 0.0):
+        super().__init__()
+        assert len(train_set_idx) > 0
+        assert isinstance(train_set_idx, np.memmap) or isinstance(train_set_idx, np.ndarray)
+        self.label_smoothing_rate = float(label_smoothing_rate)
+        # Each row is (h, r, t)
+        self.train_data = torch.LongTensor(train_set_idx)  # shape (N, 3)
+        self.target_dim = len(entity_idxs)  # for multi-class tail prediction
+
+    def __len__(self):
+        return len(self.train_data)
+
+    def __getitem__(self, idx):
+        triple = self.train_data[idx]  # [h, r, t]
+        h, r, t = triple.tolist()
+        # Output y_vec as one-hot over all entities (tail prediction)
+        y_vec = torch.zeros(self.target_dim)
+        y_vec[t] = 1.0
+        if self.label_smoothing_rate > 0:
+            y_vec = y_vec * (1 - self.label_smoothing_rate) + (1 / y_vec.size(0))
+        # Return (h, r, t), and y (sometimes y is just t, but here it's full vector)
+        return torch.LongTensor([h, r, t]), y_vec

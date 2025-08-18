@@ -3,7 +3,8 @@ import os
 from datetime import datetime
 
 import torch
-from dicee.dataset_classes import KvsAll
+# from dicee.dataset_classes import KvsAll
+from src.dataset import KvsAll
 from dicee.evaluator import Evaluator
 from dicee.knowledge_graph import KG
 from dicee.static_funcs import intialize_model, read_or_load_kg, store
