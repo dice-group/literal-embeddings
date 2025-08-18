@@ -310,26 +310,15 @@ class LiteralDataset(Dataset):
             )
 
 class KvsAll(torch.utils.data.Dataset):
-    def __init__(self, train_set_idx: np.ndarray, entity_idxs, relation_idxs, form, store=None,
-                 label_smoothing_rate: float = 0.0):
+    def __init__(self, train_set_idx: np.ndarray, entity_idxs):
         super().__init__()
-        assert len(train_set_idx) > 0
         assert isinstance(train_set_idx, np.memmap) or isinstance(train_set_idx, np.ndarray)
-        self.label_smoothing_rate = float(label_smoothing_rate)
-        # Each row is (h, r, t)
-        self.train_data = torch.LongTensor(train_set_idx)  # shape (N, 3)
-        self.target_dim = len(entity_idxs)  # for multi-class tail prediction
-
+        assert len(train_set_idx) > 0
+        self.train_data = torch.as_tensor(train_set_idx, dtype=torch.long)
+        self.target_dim = len(entity_idxs)
+        self.collate_fn = None
     def __len__(self):
         return len(self.train_data)
 
     def __getitem__(self, idx):
-        triple = self.train_data[idx]  # [h, r, t]
-        h, r, t = triple.tolist()
-        # Output y_vec as one-hot over all entities (tail prediction)
-        y_vec = torch.zeros(self.target_dim)
-        y_vec[t] = 1.0
-        if self.label_smoothing_rate > 0:
-            y_vec = y_vec * (1 - self.label_smoothing_rate) + (1 / y_vec.size(0))
-        # Return (h, r, t), and y (sometimes y is just t, but here it's full vector)
-        return torch.LongTensor([h, r, t]), y_vec
+        return self.train_data[idx]

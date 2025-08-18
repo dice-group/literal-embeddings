@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 
 import torch
-# from dicee.dataset_classes import KvsAll
+from dicee.dataset_classes import KvsAll, OnevsAllDataset
 from src.dataset import KvsAll
 from dicee.evaluator import Evaluator
 from dicee.knowledge_graph import KG
@@ -18,7 +18,6 @@ from src.callbacks import ASWA, EpochLevelProgressBar, PeriodicEvalCallback
 from src.dataset import LiteralDataset
 from src.static_funcs import evaluate_lit_preds, save_kge_experiments
 from src.trainer import KGE_Literal
-
 
 def train_kge_model(args):
     """Train a KGE model with optional literal embeddings."""
@@ -55,14 +54,15 @@ def train_kge_model(args):
     # Prepare training dataloader
     train_dataset = KvsAll(
         train_set_idx=entity_dataset.train_set,
-        entity_idxs=entity_dataset.entity_to_idx,
-        relation_idxs=entity_dataset.relation_to_idx,
-        form="EntityPrediction",
-        label_smoothing_rate=args.label_smoothing_rate,
+        entity_idxs=entity_dataset.entity_to_idx
     )
     train_dataloader = DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_core
-    )
+        train_dataset, batch_size=args.batch_size, shuffle=True,
+        num_workers=args.num_core,
+        pin_memory=True,        # faster transfer to GPU
+        prefetch_factor=2,      # workers prefetch batches
+        persistent_workers=True # workers stay alive across epochs
+)
 
     # Prepare validation dataloader if needed
     valid_dataloader = None

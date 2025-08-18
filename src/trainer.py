@@ -26,19 +26,25 @@ class KGE_Literal(LightningModule):
         return self.kge_model(x)
 
     def training_step(self, batch, batch_idx):
-        train_X_triple, train_y = batch
-        train_X = train_X_triple[:, :2]
-        train_X, train_y = train_X.to(self.device), train_y.to(self.device)
+        # batch: (batch_size, 3) => [:,0]=h, [:,1]=r, [:,2]=t
+        train_X = batch[:, :2]    # (batch_size, 2) -> h,r
+        train_t = batch[:, 2]     # (batch_size,)   -> t
 
-        # Always train KGE model
-        yhat_e = self.kge_model(train_X)
-        ent_loss = self.bce_loss_fn(yhat_e, train_y)
+        # Forward through KGE model
+        yhat_e = self.kge_model(train_X)   # (batch_size, num_entities)
+
+        # Create one-hot targets
+        targets = torch.zeros_like(yhat_e, device=self.device)
+        targets[torch.arange(train_X.size(0), device=self.device), train_t] = 1.0
+
+        # Entity loss
+        ent_loss = self.bce_loss_fn(yhat_e, targets)
         self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True)
 
-        if self.Literal_model and  self.current_epoch > self.args.deferred_literal_training_epochs:
-            # Literal model forward
-            head = train_X_triple[:, 0].long()
-            tail = train_X_triple[:, 2].long()
+        # Literal model (if active)
+        if self.Literal_model and self.current_epoch > self.args.deferred_literal_training_epochs:
+            head = train_X[:, 0].long()
+            tail = train_t.long()
 
             # Example: stacking head and tail together along a new dimension
             entity_ids = torch.stack([head, tail], dim=1)  # shape [num_triples, 2]
