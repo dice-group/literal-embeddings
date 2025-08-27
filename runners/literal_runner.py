@@ -109,7 +109,7 @@ def train_literals(args):
 
     if not args.full_storage_path:
         args.full_storage_path = (
-            f"Experiments/Literals/{dataset_name}/{args.model}_{args.embedding_dim}"
+            f"Experiments/Literals/{dataset_name}/{args.model}_{args.embedding_dim}_{args.literal_model}"
         )
         if  args.update_entity_embeddings:
             args.full_storage_path += "_emb_updated"
