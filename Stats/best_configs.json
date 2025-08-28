@@ -12,7 +12,7 @@
   "DB15K": {
     "batch_size": 512,
     "lit_epochs": 200,
-    "lit_lr": 0.001
+    "lit_lr": 0.05
   },
   "mutagenesis": {
     "batch_size": 256,

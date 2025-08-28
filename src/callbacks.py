@@ -181,50 +181,6 @@ class ASWA(Callback):
             self.decide(model.kge_model.state_dict(), ensemble_state_dict, val_running_model, mrr_updated_ensemble_model)
 
 
-
-class LiteralCallback(Callback):
-    """Callback for handling literal embeddings during training."""
-    
-    def __init__(self, args):
-        super().__init__()
-        self.args = args
-        csv_path = args.get('full_storage_path', '')+ '/'+'entity_to_idx.csv'
-        if csv_path:
-            e2idx_df = pd.read_csv(csv_path)
-            entity_to_idx = {row["entity"]: idx for idx, row in e2idx_df.iterrows()}
-        self.literal_dataset = LiteralDataset(
-            dataset_dir=args.get('dataset_dir', ''),
-            ent_idx=entity_to_idx
-        )
-        self.Literal_model = LiteralEmbeddings(
-            num_of_data_properties=self.literal_dataset.num_data_properties,
-            embedding_dims=args.get('embedding_dim', '')
-        )
-    
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        entiy_ids = batch[0][:, 0].long().to("cpu")
-        lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(
-            entiy_ids,
-            random_seed=None,
-        )
-        lit_entities, lit_properties, y_true = (
-            lit_entities.to(pl_module.device),
-            lit_properties.to(pl_module.device),
-            y_true.to(pl_module.device),
-        )
-        # For the old LiteralEmbeddings model, pass indices directly
-        yhat_lit = self.Literal_model(lit_entities, lit_properties)
-        lit_loss = torch.nn.functional.l1_loss(yhat_lit, y_true)
-        pl_module.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True)  
-
-        # Combine with the main model loss (assume it's in outputs["loss"] or similar)
-        main_loss = outputs["loss"] if isinstance(outputs, dict) and "loss" in outputs else None
-        if main_loss is not None:
-            combined_loss = main_loss + lit_loss
-            pl_module.log("combined_loss", combined_loss, on_step=False, on_epoch=True, prog_bar=True)
-            outputs["loss"] = combined_loss  # update the loss for backprop
-        return super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
-
 class PeriodicEvalCallback(Callback):
     """
     Callback to periodically evaluate the model and optionally save checkpoints during training.
@@ -355,3 +311,13 @@ class PeriodicEvalCallback(Callback):
                 # print(f"Model checkpoint saved at epoch {self.epoch_counter}")
             except Exception as e:
                 print(f"Error saving checkpoint at epoch {self.epoch_counter}: {e}")
+
+
+class BatchProcessCallback(Callback):
+    """Callback for handling batch processing during training."""
+
+    def __init__(self):
+        super().__init__()
+
+    def on_train_batch_start(self, trainer, module, batch , batch_idx,**kwargs):
+        return batch, batch_idx
