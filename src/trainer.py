@@ -29,39 +29,37 @@ class KGE_Literal(LightningModule):
         return self.kge_model(x)
 
     def training_step(self, batch,  batch_idx):
-        train_X, train_t = batch
+        #get batch_data 
+        train_X, train_y, train_t = batch
 
         # Forward through KGE model
-        yhat_e = self.kge_model(train_X)   # (batch_size, num_entities)
-
-        # Create one-hot targets
-        # targets = torch.zeros_like(yhat_e, device=self.device)
-        # targets[torch.arange(train_X.size(0), device=self.device), train_t] = 1.0
-
-        # Entity loss
-        ent_loss = self.bce_loss_fn(yhat_e, train_t)
-        self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True)
+        if self.args.use_literals:
+            yhat_e, lit_loss = self.kge_model.forward_k_vs_all(train_X, train_t)  # (batch_size, num_entities)
+            ent_loss = self.bce_loss_fn(yhat_e, train_y) + 0.01 *lit_loss
+        else:
+            yhat_e = self.kge_model.forward_k_vs_all(train_X)  # (batch_size, num_entities)
+            ent_loss = self.bce_loss_fn(yhat_e, train_y)
+        self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=train_X.size(0))
 
         # Literal model (if active)
         if self.Literal_model and self.current_epoch > self.args.deferred_literal_training_epochs:
             head = train_X[:, 0].long()
-            tail = train_t.long()
-
-            # Example: stacking head and tail together along a new dimension
-            # entity_ids = torch.stack([head, tail], dim=1)  # shape [num_triples, 2]
-            lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(head)
+            tail = train_t.flatten().long()
+            # stacking head and tail together along a new dimension
+            entity_ids = torch.cat([head, tail], dim=0)   # merge into [2 * num_triples]
+            entity_ids = torch.unique(entity_ids)         # deduplicate
+            lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(entity_ids)
             lit_entities, lit_properties, y_true = (
                 lit_entities.to(self.device),
                 lit_properties.to(self.device),
                 y_true.to(self.device),
             )
-
             ent_embeds = self.kge_model.entity_embeddings(lit_entities)
             # Ensure embeddings are on the same device as the literal model
             ent_embeds = ent_embeds.to(self.device)
             yhat_lit = self.Literal_model(ent_embeds, lit_properties)
             lit_loss = F.l1_loss(yhat_lit, y_true)
-            self.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True)
+            self.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=head.size(0))
 
             # Combined loss
             scale = torch.log1p(
@@ -75,8 +73,7 @@ class KGE_Literal(LightningModule):
             return ent_loss
 
     def validation_step(self, batch):
-        val_X, val_y = batch
-        val_X, val_y = val_X.to(self.device), val_y.to(self.device)
+        val_X, val_y, _ = batch
         yhat_val = self.kge_model(val_X)
         val_loss = self.bce_loss_fn(yhat_val, val_y)
         self.log("ent_loss_val", val_loss, on_step=True, on_epoch=True)

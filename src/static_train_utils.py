@@ -2,15 +2,16 @@ from src.callbacks import ASWA, EpochLevelProgressBar, PeriodicEvalCallback, Bat
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.stochastic_weight_avg import \
     StochasticWeightAveraging as SWA
-from src.dataset import LiteralDataset, KvsAll, OneVsAll
+import torch
+from src.dataset import LiteralDataset, KvsAll, OnevsAllDataset
 from torch.utils.data import DataLoader
 from src.model import LiteralEmbeddingsExt, LiteralEmbeddingsCliffordExt
-from src.clifford import Keci
+from src.clifford import Lit_Keci
 from dicee.static_funcs import  intialize_model
 
 def get_callbacks(args):
     # Callbacks setup
-    callbacks = [EpochLevelProgressBar(), BatchProcessCallback()]
+    callbacks = [EpochLevelProgressBar()]
     # if args.literalE:
     #     callbacks.append(LiteralCallback(args))
     if args.early_stopping:
@@ -32,6 +33,18 @@ def get_callbacks(args):
                         save_model_every_n_epoch=args.save_every_n_epochs, n_epochs_eval_model=args.n_epochs_eval_model))
     return callbacks
 
+def collate_fn(batch):
+    xs, y_vecs, targets = zip(*batch)  # unzip the triples
+    # 1. Stack xs (assuming tensors of same shape)
+    xs = torch.stack(xs)
+    # 2. Stack one-hot vectors
+    y_vecs = torch.stack(y_vecs)
+    # 3. Flatten variable-length indices into one long tensor
+    #    Convert each target to tensor if it's not already
+    targets = [torch.as_tensor(t, dtype=torch.long) for t in targets]
+    targets = torch.cat(targets, dim=0)
+
+    return xs, y_vecs, targets
 
 def get_dataloaders(args, entity_dataset):
     train_dataloader = None
@@ -44,29 +57,21 @@ def get_dataloaders(args, entity_dataset):
         train_dataset = KvsAll(
             train_set_idx=entity_dataset.train_set,
             entity_idxs=entity_dataset.entity_to_idx,
-            relation_idxs=entity_dataset.relation_to_idx,
-            form="EntityPrediction"
         )
         if args.log_validation and not args.train_all_triples:
             valid_dataset = KvsAll(
                 train_set_idx=entity_dataset.valid_set,
                 entity_idxs=entity_dataset.entity_to_idx,
-                relation_idxs=entity_dataset.relation_to_idx,
-                form="EntityPrediction",
         )
-    elif args.scoring_technique == "OneVsAll":
-        train_dataset = OneVsAll(
+    elif args.scoring_technique == "1vsAll":
+        train_dataset = OnevsAllDataset(
             train_set_idx=entity_dataset.train_set,
-            entity_idxs=entity_dataset.entity_to_idx,
-            relation_idxs=entity_dataset.relation_to_idx,
-            form="EntityPrediction"
+            entity_idxs=entity_dataset.entity_to_idx
         )
         if args.log_validation and not args.train_all_triples:
-            valid_dataset = OneVsAll(
+            valid_dataset = OnevsAllDataset(
                 train_set_idx=entity_dataset.valid_set,
-                entity_idxs=entity_dataset.entity_to_idx,
-                relation_idxs=entity_dataset.relation_to_idx,
-                form="EntityPrediction",
+                entity_idxs=entity_dataset.entity_to_idx
             )
     else:
         raise ValueError(f"Unknown scoring technique: {args.scoring_technique}. Supported techniques: 'KvsAll', 'OneVsAll'")
@@ -77,7 +82,8 @@ def get_dataloaders(args, entity_dataset):
         num_workers=args.num_core,
         pin_memory=True,        # faster transfer to GPU
         prefetch_factor=2,      # workers prefetch batches
-        persistent_workers=True # workers stay alive across epochs
+        persistent_workers=True, # workers stay alive across epochs
+        collate_fn=collate_fn  # custom collate function
     )
 
     if valid_dataset is not None:
@@ -119,9 +125,9 @@ def get_literal_components(args, entity_dataset):
     return literal_dataset, Literal_model
 
 
-def get_model(args):
-    if args.model == "Keci":
-        kge_model = Keci(args=vars(args))
+def get_model(args, entity_dataset = None):
+    if args.model == "Lit_Keci":
+        kge_model = Lit_Keci(args=vars(args), ent2idx=entity_dataset.entity_to_idx, rel2idx=entity_dataset.relation_to_idx)
     else:
         kge_model, _ = intialize_model(vars(args), 0)
     return kge_model

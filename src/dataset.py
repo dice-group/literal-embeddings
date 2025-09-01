@@ -309,29 +309,43 @@ class LiteralDataset(Dataset):
                 f"Supported types: 'z-norm', 'min-max', or None."
             )
 
-class OneVsAll(torch.utils.data.Dataset):
+class OnevsAllDataset(torch.utils.data.Dataset):
+    """
+       Dataset for the 1vsALL training strategy
+
+       Parameters
+       ----------
+       train_set_idx
+           Indexed triples for the training.
+       entity_idxs
+           mapping of entity indices.
+       Returns
+       -------
+       torch.utils.data.Dataset
+       """
+
     def __init__(self, train_set_idx: np.ndarray, entity_idxs):
         super().__init__()
         assert isinstance(train_set_idx, np.memmap) or isinstance(train_set_idx, np.ndarray)
         assert len(train_set_idx) > 0
-        self.train_data = torch.as_tensor(train_set_idx, dtype=torch.long)
+        self.train_data = train_set_idx
         self.target_dim = len(entity_idxs)
         self.collate_fn = None
     def __len__(self):
         return len(self.train_data)
 
     def __getitem__(self, idx):
-        return self.train_data[idx]
-    
+        y_vec = torch.zeros(self.target_dim)
+        triple= torch.from_numpy(self.train_data[idx].copy()).long()
+        y_vec[triple[2]] = 1
+        return triple[:2], y_vec, triple[2]
+
 
 class KvsAll(torch.utils.data.Dataset):
     """ Creates a dataset for KvsAll training by inheriting from torch.utils.data.Dataset.
     Let D denote a dataset for KvsAll training and be defined as D:= {(x,y)_i}_i ^N, where
     x: (h,r) is an unique tuple of an entity h \in E and a relation r \in R that has been seed in the input graph.
     y: denotes a multi-label vector \in [0,1]^{|E|} is a binary label. \forall y_i =1 s.t. (h r E_i) \in KG
-
-    .. note::
-        TODO
 
     Parameters
     ----------
@@ -348,42 +362,22 @@ class KvsAll(torch.utils.data.Dataset):
     -------
     self : torch.utils.data.Dataset
 
-    See Also
-    --------
-
-    Notes
-    -----
-
-    Examples
-    --------
-    >>> a = KvsAll()
-    >>> a
-    ? array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     """
 
-    def __init__(self, train_set_idx: np.ndarray, entity_idxs, relation_idxs, form, store=None,
-                 label_smoothing_rate: float = 0.0):
+    def __init__(self, train_set_idx: np.ndarray, entity_idxs, store=None):
         super().__init__()
         assert len(train_set_idx) > 0
         assert isinstance(train_set_idx, np.memmap) or isinstance(train_set_idx, np.ndarray)
         self.train_data = None
         self.train_target = None
-        self.label_smoothing_rate = torch.tensor(label_smoothing_rate)
         self.collate_fn = None
 
         # (1) Create a dictionary of training data pints
-        # Either from tuple of entities or tuple of an entity and a relation
         if store is None:
             store = dict()
-            if form == 'RelationPrediction':
-                self.target_dim = len(relation_idxs)
-                for s_idx, p_idx, o_idx in train_set_idx:
-                    store.setdefault((s_idx, o_idx), list()).append(p_idx)
-            elif form == 'EntityPrediction':
-                self.target_dim = len(entity_idxs)
-                store = mapping_from_first_two_cols_to_third(train_set_idx)
-            else:
-                raise NotImplementedError
+            self.target_dim = len(entity_idxs)
+            store = mapping_from_first_two_cols_to_third(train_set_idx)
+           
         else:
             raise ValueError()
         assert len(store) > 0
@@ -413,7 +407,4 @@ class KvsAll(torch.utils.data.Dataset):
         # 1. Initialize a vector of output.
         y_vec = torch.zeros(self.target_dim)
         y_vec[self.train_target[idx]] = 1.0
-
-        if self.label_smoothing_rate:
-            y_vec = y_vec * (1 - self.label_smoothing_rate) + (1 / y_vec.size(0))
-        return self.train_data[idx], y_vec
+        return self.train_data[idx], y_vec, self.train_target[idx]

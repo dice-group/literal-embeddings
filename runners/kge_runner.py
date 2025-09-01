@@ -30,8 +30,8 @@ def train_kge_model(args):
     args.num_relations = entity_dataset.num_relations
 
     train_dataloader, valid_dataloader = get_dataloaders(args, entity_dataset)
-    
-    kge_model = get_model(args)
+
+    kge_model = get_model(args = args, entity_dataset=entity_dataset)
     literal_dataset, Literal_model = None, None
 
     # Combined training and literal model setup
@@ -77,7 +77,10 @@ def train_kge_model(args):
             full_storage_path=args.full_storage_path,
             save_embeddings_as_csv=args.save_embeddings_as_csv
         )
-        save_kge_experiments(args=args, loss_log={}, lit_results=lit_results, attr_to_idx=literal_dataset.data_property_to_idx)
+        if literal_dataset:
+            save_kge_experiments(args=args, loss_log={}, lit_results=lit_results, attr_to_idx=literal_dataset.data_property_to_idx)
+        else:
+            save_kge_experiments(args=args, loss_log={})
         print( f"Experiment for {args.model} + {args.embedding_dim} (combined={args.combined_training})"
                f"completed and stored at {args.full_storage_path}"
         )
