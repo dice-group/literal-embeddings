@@ -39,7 +39,9 @@ class Lit_Keci(Keci):
             
             self.in_channels = (self.embedding_dim * 2 // self.n_blades)  # Divide by number of blades
 
-            self.clif_lit = CliffordLinear(g=self.g,in_channels=self.in_channels, out_channels=1, bias=True)
+            self.clif_lit_in = CliffordLinear(g=self.g,in_channels=self.in_channels, out_channels=self.in_channels, bias=True)
+            self.clif_lit_out = CliffordLinear(g=self.g,in_channels=self.in_channels, out_channels=1, bias=True)
+            self.clif_layer_norm = torch.nn.LayerNorm([self.in_channels, self.n_blades])
 
     def forward_k_vs_all(self, x: torch.Tensor, t: torch.Tensor = None) -> torch.FloatTensor:
         if self.use_literals and self.training:
@@ -74,5 +76,6 @@ class Lit_Keci(Keci):
         tuple_emb = torch.cat((e_emb, a_emb), dim=1)  # [batch, 2 * emb_dim]
         # Reshape for Clifford algebra processing
         x = tuple_emb.view(-1, self.in_channels, self.n_blades)
-        lit_score = self.clif_lit(x)[:,:,0].flatten()
+        x_hid = self.clif_lit_in(x)
+        lit_score = self.clif_lit_out(x_hid)[:,:,0].flatten()
         return lit_score

@@ -33,6 +33,7 @@ def get_callbacks(args):
                         save_model_every_n_epoch=args.save_every_n_epochs, n_epochs_eval_model=args.n_epochs_eval_model))
     return callbacks
 
+
 def collate_fn(batch):
     xs, y_vecs, targets = zip(*batch)  # unzip the triples
     # 1. Stack xs (assuming tensors of same shape)
@@ -41,8 +42,12 @@ def collate_fn(batch):
     y_vecs = torch.stack(y_vecs)
     # 3. Flatten variable-length indices into one long tensor
     #    Convert each target to tensor if it's not already
-    targets = [torch.as_tensor(t, dtype=torch.long) for t in targets]
-    targets = torch.cat(targets, dim=0)
+    if isinstance(targets, tuple) and isinstance(targets[0], list):
+        targets = [torch.as_tensor(t, dtype=torch.long) for t in targets]
+        targets = torch.cat(targets, dim=0)
+        
+    else:
+        targets = torch.stack(targets)
 
     return xs, y_vecs, targets
 

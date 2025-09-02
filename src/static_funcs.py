@@ -490,7 +490,7 @@ def create_and_save_report(trainer):
     path_experiment = trainer.args.full_storage_path
     run_time = datetime.now() - trainer.start_time
     runtime_seconds = run_time.total_seconds()
-
+    print("Total runtime of the experiment", runtime_seconds)
     # Create the report
     report = {
         "num_train_triples": train_triples,
