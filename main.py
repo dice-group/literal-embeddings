@@ -1,6 +1,7 @@
 ### Main Entry Point
 from runners.kge_runner import train_kge_model
 from runners.literal_runner import train_literals
+from runners.ff_runner import train_kge_ff
 from src.config import get_default_arguments
 
 
@@ -11,6 +12,8 @@ def main():
     
     if args.literal_training:
         train_literals(args)
+    elif args.ff_training:
+        train_kge_ff(args)
     else:
         train_kge_model(args)
 

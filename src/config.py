@@ -409,6 +409,12 @@ def get_default_arguments(args_list=None):
         help="Freeze entity embeddings during combined training.",
     )
     parser.add_argument(
+        "--ff_training",
+        action="store_true",
+        default=False,
+        help="Train KGE model with forward-forward training ",
+    )
+    parser.add_argument(
         "--use_clifford_attention",
         action="store_true",
         default=True,

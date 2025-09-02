@@ -408,3 +408,39 @@ class KvsAll(torch.utils.data.Dataset):
         y_vec = torch.zeros(self.target_dim)
         y_vec[self.train_target[idx]] = 1.0
         return self.train_data[idx], y_vec, self.train_target[idx]
+
+class NegSampleDataset(torch.utils.data.Dataset):
+    def __init__(self, train_set: np.ndarray, num_entities: int, num_relations: int, neg_sample_ratio: int = 1):
+        assert isinstance(train_set, np.ndarray)
+        # https://pytorch.org/docs/stable/data.html#multi-process-data-loading
+        # TLDL; replace Python objects with non-refcounted representations such as Pandas, Numpy or PyArrow objects
+        self.neg_sample_ratio = torch.tensor(
+            neg_sample_ratio)
+        #print("from numpy to torch")
+        self.train_triples = torch.from_numpy(train_set).unsqueeze(1)
+        self.length = len(self.train_triples)
+        self.num_entities = torch.tensor(num_entities)
+        self.num_relations = torch.tensor(num_relations)
+        self.labels = torch.tensor([1.0, 0.0])
+
+        # Precompute negatives and stack with positives
+        self.train_set = []
+        for triple in self.train_triples:
+            # (1) Sample an entity.
+            corr_entities = torch.randint(0, high=self.num_entities, size=(1,))
+            # (2) Flip a coin
+            if torch.rand(1) >= 0.5:
+                # (2.1) Corrupt (1) via tai.
+                negative_triple = torch.cat((triple[:, 0], triple[:, 1], corr_entities), dim=0).unsqueeze(0)
+            else:
+                # (2.2) Corrupt (1) via head.
+                negative_triple = torch.cat((corr_entities, triple[:, 1], triple[:, 2]), dim=0).unsqueeze(0)
+            # (3) Concat positive and negative triples.
+            self.train_set.append(torch.cat((triple, negative_triple), dim=0))
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        # get i-th training sample with positive and negative triple stacked
+        return self.train_set[idx], self.labels

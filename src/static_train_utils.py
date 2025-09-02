@@ -3,7 +3,7 @@ from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.stochastic_weight_avg import \
     StochasticWeightAveraging as SWA
 import torch
-from src.dataset import LiteralDataset, KvsAll, OnevsAllDataset
+from src.dataset import LiteralDataset, KvsAll, OnevsAllDataset, NegSampleDataset
 from torch.utils.data import DataLoader
 from src.model import LiteralEmbeddingsExt, LiteralEmbeddingsCliffordExt
 from src.clifford import Lit_Keci
@@ -78,6 +78,13 @@ def get_dataloaders(args, entity_dataset):
                 train_set_idx=entity_dataset.valid_set,
                 entity_idxs=entity_dataset.entity_to_idx
             )
+    elif args.scoring_technique == "NegSample":
+        train_dataset = NegSampleDataset(
+            #train_set: np.ndarray, num_entities: int, num_relations: int, neg_sample_ratio: int = 1
+            train_set=entity_dataset.train_set,
+            num_entities=entity_dataset.num_entities,
+            num_relations= entity_dataset.num_relations
+        )
     else:
         raise ValueError(f"Unknown scoring technique: {args.scoring_technique}. Supported techniques: 'KvsAll', 'OneVsAll'")
     
@@ -136,3 +143,13 @@ def get_model(args, entity_dataset = None):
     else:
         kge_model, _ = intialize_model(vars(args), 0)
     return kge_model
+
+
+def get_ff_models(args):
+    from .kge_models import DistMult, CLNN
+    if args.model == "DistMult":
+        return DistMult(vars(args))
+    elif args.model == "CLNN":
+        return CLNN(vars(args))
+    else:
+        raise ValueError(f"Unknown model: {args.model}")
