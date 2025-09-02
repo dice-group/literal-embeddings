@@ -113,6 +113,7 @@ def get_default_arguments(args_list=None):
             "Pykeen_ComplEx",
             "LFMult",
             "DeCaL",
+            "Lit_Keci"
         ],
         help="Available knowledge graph embedding models. "
         "To use other knowledge graph embedding models available in python, e.g.,"
@@ -444,5 +445,7 @@ def get_default_arguments(args_list=None):
     parser.add_argument("--n_epochs_eval_model", type=str, default="val_test",
                         choices=["None", "train", "train_val", "train_val_test", "val_test", "val", "train_test","test"],
                         help='Evaluating link prediction performance on data splits while performing periodic evaluation.')
+    parser.add_argument("--use_best_config", action='store_true', default=False,
+                        help='Use the best configuration found during hyperparameter search.')
 
     return parser.parse_args(args_list)

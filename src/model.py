@@ -327,6 +327,7 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
         self.num_of_data_properties = num_of_data_properties
         self.hidden_dim = embedding_dims * 2  # Combined entity + attribute embeddings
         self.gate_residual = gate_residual
+        self.freeze_entity_embeddings = freeze_entity_embeddings
 
         # data property (literal) embeddings
         self.data_property_embeddings = nn.Embedding(

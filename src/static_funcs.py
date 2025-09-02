@@ -84,44 +84,8 @@ def extract_metrics(data, split_name):
             metrics.get("H@3", ""), metrics.get("H@10", "")
         ]
 
-def save_literal_experiments(args=None, literal_model=None, results_df=None, loss_df=None):
-    if args is None:
-        raise ValueError("args must be provided to save experiment artifacts.")
 
-    # Ensure output directory exists
-    os.makedirs(args.full_storage_path, exist_ok=True)
-
-    # Save experiment configuration
-    # Ensure device is JSON serializable
-    if hasattr(args, 'device'):
-        args.device = str(args.device)
-    exp_configs = vars(args)
-    config_path = os.path.join(args.full_storage_path, "configuration.json")
-    with open(config_path, "w") as f:
-        json.dump(exp_configs, f, indent=4)
-
-    # Save aggregated literal prediction results (if available)
-    if results_df is not None:
-        results_path = os.path.join(args.full_storage_path, "lit_eval_results.csv")
-        results_df.to_csv(results_path, index=False)
-    
-    # Save literal model state (if provided)
-    if literal_model is not None:
-        model_path = os.path.join(args.full_storage_path, "literal_model.pt")
-        torch.save(literal_model.state_dict(), model_path)
-
-    # Save training loss log (if available)
-    if loss_df is not None:
-        if isinstance(loss_df, dict):
-            loss_df = pd.DataFrame.from_dict(loss_df, orient="columns")
-
-        loss_path = os.path.join(args.full_storage_path, "lit_loss_log.csv")
-        loss_df.to_csv(loss_path, index=False)
-
-    print("Literal Experiments saved at", args.full_storage_path)
-
-
-def save_kge_experiments(args, loss_log=None, lit_results=None):
+def save_kge_experiments(args, loss_log=None, lit_results=None, attr_to_idx=None):
 
     if args is None:
         raise ValueError("`args` must be provided to save experiment results.")
@@ -147,6 +111,12 @@ def save_kge_experiments(args, loss_log=None, lit_results=None):
         lit_results.to_json(results_path, orient="records", indent=4)
 
     # print(f"\n Experiment results saved at: {args.full_storage_path}")
+
+    if attr_to_idx is not None:
+        idx_to_attr = {v: k for k, v in attr_to_idx.items()}
+        df = pd.DataFrame.from_dict(idx_to_attr, orient="index", columns=["attribute"])
+        df.to_csv(args.full_storage_path + "/attribute_to_idx.csv")
+        print(f"Literal attributes indexing saved to {args.full_storage_path}/attribute_to_idx.csv")
 
 def log_exp(file_path : str= None, args = None):
     if file_path is None:
@@ -280,7 +250,7 @@ def load_model_components(kge_path: str) -> Optional[KGEModelComponents]:
         config = kge_obj.configs
         entity_to_idx = kge_obj.entity_to_idx
         relation_to_idx = kge_obj.relation_to_idx
-        print("DiCE KGE model loaded successfully!")
+        print("DICE KGE model loaded successfully!")
     except Exception:
         # print("Cannot load as dicee KGE model.", str(e), "Trying manual load.")
         try:
@@ -488,36 +458,19 @@ def get_full_storage_path(args):
     # Generate timestamp for test runs
     if getattr(args, 'test_runs', False):
         exp_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
-        return f"Test_runs/{exp_time}"
-    
+        return f"Experiments/Test_runs/{exp_time}"
+
     # Determine experiment type and create appropriate path structure
-    if getattr(args, 'combined_training', False):
+    if getattr(args, 'combined_training', False) :
         # Combined KGE + Literal training
-        base_path = f"Experiments/KGE_Combined/{dataset_name}_combined"
+        if getattr(args, 'freeze_entity_embeddings_combined', False):
+            base_path = f"Experiments/KGE_Combined/{dataset_name}_combined_frozen"
+        else:
+            base_path = f"Experiments/KGE_Combined/{dataset_name}_combined"
+
         model_name = getattr(args, 'model', 'unknown_model')
-        return f"{base_path}/{model_name}"
-    
-    elif getattr(args, 'literal_training', False):
-        # Literal-only training
-        base_path = f"Experiments/Literal/{dataset_name}"
-        
-        # Add model-specific information
-        literal_model = getattr(args, 'literal_model', 'mlp')
-        embedding_dim = getattr(args, 'embedding_dim', 'unknown_dim')
-        lit_norm = getattr(args, 'lit_norm', 'z-norm')
-        
-        # Include special configurations in path
-        config_parts = [literal_model, str(embedding_dim), lit_norm]
-        
-        if getattr(args, 'gate_residual', False):
-            config_parts.append('gated')
-        if getattr(args, 'residual_connection', False):
-            config_parts.append('residual')
-        if getattr(args, 'freeze_entity_embeddings', False):
-            config_parts.append('frozen')
-            
-        config_str = '_'.join(config_parts)
-        return f"{base_path}/{config_str}"
+        return f"{base_path}/{model_name}_{embedding_dim}"
+
     
     else:
         # Standard KGE training
@@ -526,3 +479,30 @@ def get_full_storage_path(args):
         embedding_dim = getattr(args, 'embedding_dim', 'unknown_dim')
         return f"{base_path}/{model_name}_{embedding_dim}"
     
+
+def create_and_save_report(trainer):
+    num_entities = trainer.kge_model.num_entities
+    num_relations = trainer.kge_model.num_relations
+    train_triples = len(trainer.trainer.entity_dataset.train_set)
+    # Calculate model size and parameters
+    total_params = sum(p.numel() for p in trainer.kge_model.parameters())
+    model_size_mb = total_params * 4 / (1024 * 1024)  # Assuming float32 (4 bytes per param)
+    path_experiment = trainer.args.full_storage_path
+    run_time = datetime.now() - trainer.start_time
+    runtime_seconds = run_time.total_seconds()
+    print("Total runtime of the experiment", runtime_seconds)
+    # Create the report
+    report = {
+        "num_train_triples": train_triples,
+        "num_entities": num_entities,
+        "num_relations": num_relations,
+        "max_length_subword_tokens": None,
+        "runtime_kg_loading": getattr(trainer.args, '_kg_loading_time', None),
+        "EstimatedSizeMB": model_size_mb,
+        "NumParam": total_params,
+        "path_experiment_folder": path_experiment,
+        "Runtime": runtime_seconds
+    }
+    report_path = f"{path_experiment}/report.json"
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=4)
