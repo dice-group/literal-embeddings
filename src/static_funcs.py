@@ -200,6 +200,9 @@ def evaluate_lit_preds(
             # Ensure embeddings are on the same device as the literal model
             entity_embeddings = entity_embeddings.to(device)
             predictions = literal_model.forward(entity_embeddings, properties)
+    
+    if isinstance(predictions, tuple):
+        predictions = predictions[0]
 
     if multi_regression:
         preds_norm = (
