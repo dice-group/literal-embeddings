@@ -11,75 +11,71 @@ class CLNN(BaseKGE):
         super().__init__(args)
         self.name = "CLNN"
 
-        n_layers = args.get('n_layer', 8)
-        n_heads = args.get('n_head', 4)
-        embedding_dim = args.get('embedding_dim', 32)
-        in_features = embedding_dim * 2
+        self.embedding_dim = args.get('embedding_dim', 32)
         dropout = args.get('dropout', 0.15)
-        inner_embedding_dim = args.get('inner_embedding_size', 4)
         self.scoring_technique = args.get('scoring_technique', 'KvsAll')
         self.g = [-1]
         self.n_blades = 2 ** len(self.g)
         if self.scoring_technique == "NegSample":
-            self.in_channels = embedding_dim * 3 // self.n_blades
+            self.in_channels = self.embedding_dim *3 // self.n_blades
             self.out_channels = 1
         elif self.scoring_technique == "KvsAll":
-            self.in_channels = embedding_dim * 2 // self.n_blades
+            self.in_channels = self.embedding_dim * 2 // self.n_blades
             self.out_channels = self.num_entities
         else:
             raise ValueError(f"Unknown scoring technique: {self.scoring_technique}")
 
-        assert n_layers > 0, "n_layer must be greater than 0"
-        assert n_heads > 0, "n_head must be greater than 0"
-        assert in_features % inner_embedding_dim == 0, (
-            f"in_features ({in_features}) must be divisible by inner_embedding_size ({inner_embedding_dim})"
-        )
-        assert inner_embedding_dim % n_heads == 0, (
-            f"inner_embedding_size ({inner_embedding_dim}) must be divisible by n_head ({n_heads})"
-        )
 
         
-        self.input_layer = CliffordLinear(
-            g=self.g,
-            in_channels=self.in_channels,
-            out_channels=self.in_channels,
-            bias=True,
-        )
+        self.input_layer = CliffordLinear(g=self.g, in_channels=self.in_channels,
+             out_channels=self.in_channels, bias=True)
         self.dropout = nn.Dropout(p=dropout)
         self.layer_norm = nn.LayerNorm([self.in_channels, self.n_blades])
-        self.output_layer = CliffordLinear(
-            g=self.g,
-            in_channels=self.in_channels,
-            out_channels=self.out_channels,  # for FF, keep output dim same as input
-            bias=True,
-        )
-        self.threshold = 2.0
+        self.output_layer = CliffordLinear(g=self.g,in_channels=self.in_channels,
+            out_channels=self.out_channels, bias=True)
+        
+        # mixture weights (how much each layer contributes to training loss)
+        # Learnable mixture parameter
+        self.alpha_raw = nn.Parameter(torch.tensor(0.5))  # start at 0.5
 
-    def forward(self, x):
+    def get_input(self, x):
         if self.scoring_technique == "NegSample":
             emb_head, emb_rel, emb_tail = self.get_triple_representation(x)
             cat_inp = torch.cat((emb_head, emb_rel, emb_tail), dim=1)
         else:
             emb_head, emb_rel = self.get_head_relation_representation(x)
             cat_inp = torch.cat((emb_head, emb_rel), dim=1)
-
         # reshape for convolutional/structured processing
-        clnnn_input = cat_inp.view(-1, self.in_channels, self.n_blades)
-        
+        cat_inp = cat_inp.view(-1, self.in_channels, self.n_blades)
+        return cat_inp
+
+    
+    def forward(self,x):
+        #clnnn_input = self.get_input(x)
+        # emb_head, emb_rel, emb_tail = self.get_triple_representation(x)
+
+        # clnnn_input = emb_head * emb_rel * emb_tail
+        # clnnn_input = clnnn_input.view(-1, self.in_channels, self.n_blades)
+        clnnn_input = self.get_input(x)
         z = F.relu(self.input_layer(clnnn_input))
-        z = self.layer_norm(z)
-        z = self.dropout(z)
-        z = self.output_layer(z)
+        out = self.output_layer(z)
+        if self.training:
+            return z[:,:,0], out[:,:,0]   # shape: (batch, features)
+        else:
+            return out[:,:,0]
 
-        # Instead of slicing only [:,:,0], pool across blades
-        z = z[:,:,0]   # shape: (batch, features)
-        return z
+        
 
-    def goodness(self, x):
+    def goodness_in(self, x):
         # Squared activation energy (per sample)
-        return torch.mean(x ** 2, dim=1)   # shape: (batch,)
+        return torch.sum(x ** 2, dim=1)   # shape: (batch,)
+    
+    def goodness_out(self, score):
+        """Goodness for last layer = directly the scalar output"""
+        return score.squeeze(1)  # (batch,)
 
-    def ff_update(self, x_pos, x_neg, optimizer, threshold=2.0, reg_lambda=1e-4):
+
+    def ff_update(self, x_pos, x_neg, optimizer, threshold_in=2.0, threshold_out = 1.0):
         """
         Forward-Forward style update with margin/threshold goodness.
         - threshold: target value separating good (pos) and bad (neg) inputs
@@ -87,29 +83,37 @@ class CLNN(BaseKGE):
         """
         optimizer.zero_grad()
 
-        g_pos = self.goodness(self.forward(x_pos))
-        g_neg = self.goodness(self.forward(x_neg))
+        in_pos, out_pos = self.forward(x_pos)
+        in_neg, out_neg = self.forward(x_neg)
 
-        # FF margin-style loss
-        loss_pos = F.relu(threshold - g_pos).mean()   # positives should be >= threshold
-        loss_neg = F.relu(g_neg - threshold).mean()   # negatives should be <= threshold
-        loss = loss_pos + loss_neg
+        #Per-layer goodness
+        g1_pos, g1_neg = self.goodness_in(in_pos), self.goodness_in(in_neg)
+        g2_pos, g2_neg = self.goodness_out(out_pos), self.goodness_out(out_neg)
 
-        # optional L2 regularization to prevent embedding explosion
-        reg_loss = 0.0
-        for p in self.parameters():
-            reg_loss = reg_loss + p.norm(2).pow(2)
-        reg_loss = reg_lambda * reg_loss
 
-        total_loss = loss + reg_loss
-        total_loss.backward()
+        # Layer 1 encourages longer hidden activations for pos, shorter for neg
+        loss1_pos = F.softplus(threshold_in - g1_pos).mean()
+        loss1_neg = F.softplus(g1_neg - threshold_in).mean()
+
+        # Layer 2 encourages final scalar score to be higher for pos, lower for neg
+        loss2_pos = F.softplus(threshold_out - g2_pos).mean()
+        loss2_neg = F.softplus(g2_neg - threshold_out).mean()
+
+
+        # Total objective
+        # Mixture weighted loss
+        alpha = torch.sigmoid(self.alpha_raw)
+        loss = alpha * (loss1_pos + loss1_neg) + (1-alpha) * (loss2_pos + loss2_neg)
+        loss.backward()
         optimizer.step()
 
         return {
-            "loss": total_loss.item(),
-            "pos_goodness": g_pos.mean().item(),
-            "neg_goodness": g_neg.mean().item()
-        }
+        "loss": loss.item(),
+        "g1_pos": g1_pos.mean().item(),
+        "g1_neg": g1_neg.mean().item(),
+        "g2_pos": g2_pos.mean().item(),
+        "g2_neg": g2_neg.mean().item()
+    }
 
 class DistMult(BaseKGE):
     """

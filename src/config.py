@@ -113,7 +113,8 @@ def get_default_arguments(args_list=None):
             "Pykeen_ComplEx",
             "LFMult",
             "DeCaL",
-            "Lit_Keci"
+            "Lit_Keci",
+            "CLNN"
         ],
         help="Available knowledge graph embedding models. "
         "To use other knowledge graph embedding models available in python, e.g.,"
