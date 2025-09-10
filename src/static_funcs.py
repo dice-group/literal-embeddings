@@ -214,7 +214,7 @@ def evaluate_lit_preds(
     attributes = target_df["relation"].to_list()
     target_df["predictions"] = literal_dataset.denormalize(preds_norm=preds_norm,attributes= attributes,
                                                       normalization_params=literal_dataset.normalization_params)
-
+    target_df = target_df.dropna(subset=["tail", "predictions"])
     attr_error_metrics = target_df.groupby("relation").agg(
     MAE=("tail", lambda x: mean_absolute_error(x, target_df.loc[x.index, "predictions"])),
     RMSE=("tail", lambda x: root_mean_squared_error(x, target_df.loc[x.index, "predictions"]))
@@ -472,6 +472,7 @@ def get_full_storage_path(args):
             base_path = f"Experiments/KGE_Combined/{dataset_name}_combined"
 
         model_name = getattr(args, 'model', 'unknown_model')
+        embedding_dim = getattr(args, "embedding_dim", 64)
         return f"{base_path}/{model_name}_{embedding_dim}"
 
     

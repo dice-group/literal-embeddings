@@ -35,7 +35,7 @@ class LiteralDataset(Dataset):
 
         self.file_paths = {
             s: os.path.join(self.dataset_dir, f"{s}.txt")
-            for s in ("train", "val", "test")
+            for s in ("train", "valid", "test")
         }
 
         self.entity_to_idx = (
