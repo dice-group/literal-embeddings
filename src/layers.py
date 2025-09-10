@@ -17,7 +17,7 @@ class FFLayer(nn.Module):
         self.threshold = threshold
         self.layer = CliffordLinear(g = self.g, in_channels= self.in_channels,
                                       out_channels= self.out_channels)
-        self.optmizer = torch.optim.Adam(self.layer.parameters(), lr = self.lr)
+        self.optimizer = torch.optim.Adam(self.layer.parameters(), lr = self.lr)
     
     def forward(self, x):
         return F.relu(self.layer(x))
@@ -25,7 +25,7 @@ class FFLayer(nn.Module):
     def goodness(self, activations):
         return (activations**2).mean(dim=1)
 
-    def train_step(self, x_pos, x_neg, optimizer):
+    def train_step(self, x_pos, x_neg):
         act_pos = self.forward(x_pos)
         act_neg = self.forward(x_neg)
 
@@ -37,9 +37,9 @@ class FFLayer(nn.Module):
 
         loss = loss_pos + loss_neg
 
-        optimizer.zero_grad()
+        self.optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+        self.optimizer.step()
         return act_pos, act_neg, loss.item()
     
 class FFOutLayer(nn.Module):
@@ -55,7 +55,7 @@ class FFOutLayer(nn.Module):
         self.threshold = threshold
         self.layer = CliffordLinear(g = self.g, in_channels= self.in_channels,
                                       out_channels= self.out_channels)
-        self.optmizer = torch.optim.Adam(self.layer.parameters(), lr = self.lr)
+        self.optimizer = torch.optim.Adam(self.layer.parameters(), lr = self.lr)
     
     def forward(self, x):
         return self.layer(x)

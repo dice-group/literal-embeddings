@@ -13,12 +13,12 @@ class CLNN(BaseKGE):
         self.g = [-1]
         self.n_blades = 2 ** (len(self.g))
         self.embedding_dim = args.get('embedding_dim', 32)
-        self.in_channels = self.embedding_dim * 3 // self.in_channels
-        self.hid_channels = self.embedding_dim * 3 // self.in_channels
+        self.in_channels = self.embedding_dim * 3 // self.n_blades
+        self.hid_channels = self.embedding_dim * 3 // self.n_blades
         self.out_channels = 1
 
-        self.in_layer = FFLayer(g=self.g, in_channels = self.in_channels, out_channels= self.hid_channels )
-        self.out_layer = FFOutLayer(g=self.g, in_channels = self.hid_channels,out_channels= self.out_channels)
+        self.in_layer = FFLayer(g=self.g, in_channels = self.in_channels, out_channels= self.hid_channels, lr = self.learning_rate  )
+        self.out_layer = FFOutLayer(g=self.g, in_channels = self.hid_channels,out_channels= self.out_channels, lr = self.learning_rate )
         
 
     def get_input(self, x):
@@ -29,17 +29,19 @@ class CLNN(BaseKGE):
             raise ValueError(f"Total channels {total} not divisible by n_blades {self.n_blades}")
         channels_per_blade = total // self.n_blades
         # reshape and permute to (B, channels_per_blade, n_blades)
-        return x.view(B, self.n_blades, channels_per_blade).permute(0, 2, 1)
+        return cat_inp.view(B, self.n_blades, channels_per_blade).permute(0, 2, 1)
 
-    
-    def ff_update(self, x_pos, x_neg):
+    def score(self, h,r,t):
+        pass
+
+    def ff_update(self, x_pos, x_neg, optimier):
+        optimier.zero_grad()
         x_pos_inp = self.get_input(x_pos)
         x_pos_neg = self.get_input(x_neg)
         hid_pos, hid_neg, hid_loss = self.in_layer.train_step(x_pos_inp, x_pos_neg)
-        loss = self.out_layer.train_step(hid_pos, hid_neg)
-        return loss + hid_loss
-
-
+        out_loss = self.out_layer.train_step(hid_pos.detach(), hid_neg.detach())
+        total_loss = hid_loss + out_loss
+        return { "loss": total_loss }
    
 
 class DistMult(BaseKGE):
