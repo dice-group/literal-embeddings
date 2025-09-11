@@ -1,7 +1,10 @@
 import pytest
 from dicee.executer import Execute
-from src.config import get_default_arguments
+
 from runners.literal_runner import train_literals
+from src.config import get_default_arguments
+
+
 class TestLiteralRunner:
     """Regression tests for the literal runner train_literals method."""
     @pytest.fixture(scope="class")

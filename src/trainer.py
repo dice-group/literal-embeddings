@@ -1,10 +1,11 @@
 from datetime import datetime
+
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from src.static_funcs import create_and_save_report
 from pytorch_lightning import LightningModule
 
+from src.static_funcs import create_and_save_report
 
 
 class KGE_Literal(LightningModule):

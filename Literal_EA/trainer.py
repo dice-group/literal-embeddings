@@ -1,10 +1,13 @@
+import json
 import os
+
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from model import *
-import json
 from pytorch_lightning.callbacks import EarlyStopping
+
+from model import *
+
 
 class LitModel(pl.LightningModule):
     """PyTorch Lightning module for knowledge graph embedding models"""

@@ -10,11 +10,12 @@ Usage:
     create_disjoint_dataset("KGs/FB15k-237", "KGs/FB15k-237_disjoint")
 """
 
-import pandas as pd
-import numpy as np
+import argparse
 import os
 from pathlib import Path
-import argparse
+
+import numpy as np
+import pandas as pd
 
 
 def parse_args():

@@ -1,6 +1,7 @@
-import torch
 import pandas as pd
+import torch
 from torch.utils.data import Dataset
+
 
 class KGDataset(Dataset):
     """PyTorch Dataset for Knowledge Graph triples with consistent entity/relation mappings"""

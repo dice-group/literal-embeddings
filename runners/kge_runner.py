@@ -1,15 +1,18 @@
 ### KGE Training Runner
 import os
-import torch
 
+import torch
 from dicee.evaluator import Evaluator
 from dicee.knowledge_graph import KG
-from dicee.static_funcs import  read_or_load_kg, store
+from dicee.static_funcs import read_or_load_kg, store
 
 from src.abstracts import KGETrainer
+from src.static_funcs import (evaluate_lit_preds, get_full_storage_path,
+                              save_kge_experiments)
+from src.static_train_utils import (get_callbacks, get_dataloaders,
+                                    get_literal_components, get_model)
 from src.trainer import KGE_Literal
-from src.static_funcs import evaluate_lit_preds, save_kge_experiments, get_full_storage_path
-from src.static_train_utils import get_callbacks, get_dataloaders, get_literal_components, get_model
+
 
 def train_kge_model(args):
     """Train a KGE model with optional literal embeddings."""

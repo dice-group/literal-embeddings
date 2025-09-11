@@ -1,15 +1,16 @@
+import json
+import os
+from collections import defaultdict
+
 import pandas as pd
 import torch
+from dicee.static_funcs import save_checkpoint_model
 from pytorch_lightning import Callback
 from pytorch_lightning.callbacks import TQDMProgressBar
 from tqdm import tqdm
 
-import os
-import json
-from collections import defaultdict
 from src.dataset import LiteralDataset
 from src.model import LiteralEmbeddings
-from dicee.static_funcs import save_checkpoint_model
 
 
 class EpochLevelProgressBar(TQDMProgressBar):

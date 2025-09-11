@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
 
+
 def make_blades(n_blades, inputs):
         """
         inputs: list of tensors [ (B, C1), (B, C2), ... ]

@@ -1,13 +1,15 @@
-import pytest
 import os
-from torch.utils.data import DataLoader
+
+import pytest
 from dicee.executer import Execute
 from dicee.knowledge_graph_embeddings import KGE
+from torch.utils.data import DataLoader
+
+from src.config import get_default_arguments
 from src.dataset import LiteralDataset
 from src.model import LiteralEmbeddings, LiteralEmbeddingsClifford
-from src.trainer_literal import train_literal_model
-from src.config import get_default_arguments
 from src.static_funcs import evaluate_lit_preds
+from src.trainer_literal import train_literal_model
 
 
 class TestPredictLitRegression:

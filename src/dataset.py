@@ -1,11 +1,12 @@
 import os
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset
-from collections import defaultdict
 from dicee.static_preprocess_funcs import mapping_from_first_two_cols_to_third
+from torch.utils.data import Dataset
+
 
 class LiteralDataset(Dataset):
     def __init__(self, dataset_dir, ent_idx, normalization="z-norm", sampling_ratio=None, selected_attributes=None, 
@@ -324,22 +325,21 @@ class OnevsAllDataset(torch.utils.data.Dataset):
        torch.utils.data.Dataset
        """
 
-    def __init__(self, train_set_idx: np.ndarray, entity_idxs):
+    def __init__(self, train_set_idx: np.ndarray, entity_idxs, collate_fn = None):
         super().__init__()
         assert isinstance(train_set_idx, np.memmap) or isinstance(train_set_idx, np.ndarray)
         assert len(train_set_idx) > 0
         self.train_data = train_set_idx
         self.target_dim = len(entity_idxs)
-        self.collate_fn = None
+        self.collate_fn = collate_fn
+        self.labels = torch.zeros(len(self.train_data), self.target_dim)
+        self.labels[torch.arange(len(self.train_data)), self.train_data[:, 2]] = 1
     def __len__(self):
         return len(self.train_data)
 
     def __getitem__(self, idx):
-        y_vec = torch.zeros(self.target_dim)
-        triple= torch.from_numpy(self.train_data[idx].copy()).long()
-        y_vec[triple[2]] = 1
-        return triple[:2], y_vec, triple[2]
-
+        triple = torch.from_numpy(self.train_data[idx].copy()).long()
+        return triple[:2], self.labels[idx], triple[2]
 
 class KvsAll(torch.utils.data.Dataset):
     """ Creates a dataset for KvsAll training by inheriting from torch.utils.data.Dataset.
@@ -364,13 +364,13 @@ class KvsAll(torch.utils.data.Dataset):
 
     """
 
-    def __init__(self, train_set_idx: np.ndarray, entity_idxs, store=None):
+    def __init__(self, train_set_idx: np.ndarray, entity_idxs, store=None, collate_fn = None):
         super().__init__()
         assert len(train_set_idx) > 0
         assert isinstance(train_set_idx, np.memmap) or isinstance(train_set_idx, np.ndarray)
         self.train_data = None
         self.train_target = None
-        self.collate_fn = None
+        self.collate_fn = collate_fn
 
         # (1) Create a dictionary of training data pints
         if store is None:

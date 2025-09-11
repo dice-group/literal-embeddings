@@ -1,7 +1,8 @@
-import torch
-import os
 import json
+import os
 from collections import defaultdict
+
+import torch
 from pytorch_lightning import Callback
 
 

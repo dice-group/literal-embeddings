@@ -1,5 +1,6 @@
-import torch
 import numpy as np
+import torch
+
 
 class Evaluator:
     """Evaluates knowledge graph embedding models on link prediction tasks"""

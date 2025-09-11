@@ -1,12 +1,16 @@
 import os
+
 import torch
 
-from src.trainer_literal import train_literal_model
 from src.static_funcs import evaluate_lit_preds, load_model_components
+from src.static_funcs_literals import (apply_best_config_to_args,
+                                       clear_cuda_cache,
+                                       get_full_storage_path_literals,
+                                       get_litem_model, get_literal_datasets,
+                                       reset_random_seeds,
+                                       save_literal_experiments)
+from src.trainer_literal import train_literal_model
 
-from src.static_funcs_literals import apply_best_config_to_args, get_full_storage_path_literals
-from src.static_funcs_literals import reset_random_seeds, clear_cuda_cache
-from src.static_funcs_literals import  get_literal_datasets, get_litem_model, save_literal_experiments
 
 def train_literals(args):
     """Train literal embeddings using a pre-trained KGE model."""

@@ -1,10 +1,10 @@
-import torch
 import numpy as np
 import pandas as pd
-
+import torch
 import torch.nn.functional as F
-from dicee.models import Keci
 from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
+from dicee.models import Keci
+
 
 def load_num_lit(ent2idx, dataset_dir, lit_norm='min_max', wrap=True):
     literal_df = pd.read_csv(f'{dataset_dir}/literals/numerical_literals.txt', names=['ent', "attribute", "value"], sep='\t')

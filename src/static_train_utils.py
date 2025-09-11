@@ -1,19 +1,20 @@
-from src.callbacks import ASWA, EpochLevelProgressBar, PeriodicEvalCallback, BatchProcessCallback
+import torch
+from dicee.static_funcs import intialize_model
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.stochastic_weight_avg import \
     StochasticWeightAveraging as SWA
-import torch
-from src.dataset import LiteralDataset, KvsAll, OnevsAllDataset
 from torch.utils.data import DataLoader
-from src.model import LiteralEmbeddingsExt, LiteralEmbeddingsCliffordExt
+
+from src.callbacks import (ASWA, EpochLevelProgressBar,
+                           PeriodicEvalCallback)
 from src.clifford import Lit_Keci
-from dicee.static_funcs import  intialize_model
+from src.dataset import KvsAll, LiteralDataset, OnevsAllDataset
+from src.model import LiteralEmbeddingsCliffordExt, LiteralEmbeddingsExt
+
 
 def get_callbacks(args):
     # Callbacks setup
     callbacks = [EpochLevelProgressBar()]
-    # if args.literalE:
-    #     callbacks.append(LiteralCallback(args))
     if args.early_stopping:
         callbacks.append(EarlyStopping(
             monitor="ent_loss_val",
@@ -34,22 +35,18 @@ def get_callbacks(args):
     return callbacks
 
 
-def collate_fn(batch):
+def kvsall_collate_fn(batch):
     xs, y_vecs, targets = zip(*batch)  # unzip the triples
     # 1. Stack xs (assuming tensors of same shape)
     xs = torch.stack(xs)
     # 2. Stack one-hot vectors
     y_vecs = torch.stack(y_vecs)
     # 3. Flatten variable-length indices into one long tensor
-    #    Convert each target to tensor if it's not already
-    if isinstance(targets, tuple) and isinstance(targets[0], list):
-        targets = [torch.as_tensor(t, dtype=torch.long) for t in targets]
-        targets = torch.cat(targets, dim=0)
-        
-    else:
-        targets = torch.stack(targets)
+    targets = [torch.as_tensor(t, dtype=torch.long) for t in targets]
+    targets = torch.cat(targets, dim=0)
 
     return xs, y_vecs, targets
+
 
 def get_dataloaders(args, entity_dataset):
     train_dataloader = None
@@ -59,27 +56,24 @@ def get_dataloaders(args, entity_dataset):
 
     # Prepare training dataloader
     if args.scoring_technique == "KvsAll":
-        train_dataset = KvsAll(
-            train_set_idx=entity_dataset.train_set,
-            entity_idxs=entity_dataset.entity_to_idx,
-        )
+        train_dataset = KvsAll( train_set_idx=entity_dataset.train_set,
+                                entity_idxs=entity_dataset.entity_to_idx,
+                                  collate_fn = kvsall_collate_fn)
+        
         if args.log_validation and not args.train_all_triples:
-            valid_dataset = KvsAll(
-                train_set_idx=entity_dataset.valid_set,
-                entity_idxs=entity_dataset.entity_to_idx,
-        )
+            valid_dataset = KvsAll(train_set_idx=entity_dataset.valid_set,
+                entity_idxs=entity_dataset.entity_to_idx)
+    
     elif args.scoring_technique == "1vsAll":
-        train_dataset = OnevsAllDataset(
-            train_set_idx=entity_dataset.train_set,
-            entity_idxs=entity_dataset.entity_to_idx
-        )
+        train_dataset = OnevsAllDataset( train_set_idx=entity_dataset.train_set,
+            entity_idxs=entity_dataset.entity_to_idx, collate_fn = None)
+        
         if args.log_validation and not args.train_all_triples:
-            valid_dataset = OnevsAllDataset(
-                train_set_idx=entity_dataset.valid_set,
-                entity_idxs=entity_dataset.entity_to_idx
-            )
+            valid_dataset = OnevsAllDataset( train_set_idx=entity_dataset.valid_set,
+                                            entity_idxs=entity_dataset.entity_to_idx)
     else:
-        raise ValueError(f"Unknown scoring technique: {args.scoring_technique}. Supported techniques: 'KvsAll', 'OneVsAll'")
+        raise ValueError(f"Unknown scoring technique: {args.scoring_technique}. \
+                         Supported techniques: 'KvsAll', 'OneVsAll'")
     
     
     train_dataloader = DataLoader(
@@ -88,15 +82,13 @@ def get_dataloaders(args, entity_dataset):
         pin_memory=True,        # faster transfer to GPU
         prefetch_factor=2,      # workers prefetch batches
         persistent_workers=True, # workers stay alive across epochs
-        collate_fn=collate_fn  # custom collate function
+        collate_fn= train_dataset.collate_fn
     )
 
     if valid_dataset is not None:
-        valid_dataloader = DataLoader(
-            valid_dataset, batch_size=args.batch_size, shuffle=False, num_workers=7
-        )
-
-
+        valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size,
+                                       shuffle=False, num_workers=7 )
+        
     return train_dataloader, valid_dataloader
 
 
@@ -126,13 +118,15 @@ def get_literal_components(args, entity_dataset):
             freeze_entity_embeddings=args.freeze_entity_embeddings_combined,
         )
     else:
-        raise ValueError(f"Unknown literal model: {args.literal_model}. Supported models: 'clifford', 'mlp'")
+        raise ValueError(f"Unknown literal model: {args.literal_model}.\
+                          Supported models: 'clifford', 'mlp'")
     return literal_dataset, Literal_model
 
 
 def get_model(args, entity_dataset = None):
     if args.model == "Lit_Keci":
-        kge_model = Lit_Keci(args=vars(args), ent2idx=entity_dataset.entity_to_idx, rel2idx=entity_dataset.relation_to_idx)
+        kge_model = Lit_Keci(args=vars(args), ent2idx=entity_dataset.entity_to_idx,
+                              rel2idx=entity_dataset.relation_to_idx)
     else:
         kge_model, _ = intialize_model(vars(args), 0)
     return kge_model

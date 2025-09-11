@@ -1,14 +1,16 @@
-import os
-import json
-import torch
 import gc
-import numpy as np
-import pandas as pd
+import json
+import os
 from datetime import datetime
 
+import numpy as np
+import pandas as pd
+import torch
 from torch.utils.data import DataLoader
+
 from src.dataset import LiteralDataset
 from src.model import LiteralEmbeddings, LiteralEmbeddingsClifford
+
 
 def clear_cuda_cache():
     """Clear CUDA cache and force garbage collection."""

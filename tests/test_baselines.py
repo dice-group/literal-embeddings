@@ -3,12 +3,13 @@ Simple pytest test for GLOBAL and LOCAL baseline calculations.
 Tests the core functionality of the evaluate_LOCAL_GLOBAL function.
 """
 
-import pytest
-import pandas as pd
-import numpy as np
-import sys
 import os
+import sys
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent

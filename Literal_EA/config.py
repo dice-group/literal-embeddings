@@ -1,5 +1,6 @@
 import argparse
 
+
 def parse_args():
     """Parse command line arguments for model training"""
     parser = argparse.ArgumentParser()

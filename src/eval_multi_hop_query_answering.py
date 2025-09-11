@@ -13,18 +13,16 @@ pip install dicee
 (4) Answer multi-hop queries
 (5) Report results
 """
-from dicee import QueryGenerator
-from dicee.executer import Execute
-from dicee.config import Namespace
-from dicee.knowledge_graph_embeddings import KGE
-import pandas as pd
-
-from dicee.static_funcs import evaluate
-from dicee.static_funcs import load_pickle
-from dicee.static_funcs import load_json
 import argparse
 import os
 from typing import Generator, List, Tuple
+
+import pandas as pd
+from dicee import QueryGenerator
+from dicee.config import Namespace
+from dicee.executer import Execute
+from dicee.knowledge_graph_embeddings import KGE
+from dicee.static_funcs import evaluate, load_json, load_pickle
 
 
 def initialize_query_generator(args):

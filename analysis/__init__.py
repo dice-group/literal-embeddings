@@ -9,7 +9,7 @@ This module contains utilities for:
 """
 
 from .ablations import calculate_abalation_scores, evaluate_ablations
-from .baselines import evaluate_LOCAL_GLOBAL, calculate_baselines
+from .baselines import calculate_baselines, evaluate_LOCAL_GLOBAL
 
 __all__ = [
     "calculate_abalation_scores",
