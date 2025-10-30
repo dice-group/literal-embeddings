@@ -314,7 +314,7 @@ class LiteralEmbeddingsClifford(nn.Module):
 
 class LiteralEmbeddingsCliffordExt(nn.Module):
     """
-    A model for learning and predicting numerical literals using external pre-trained KGE with Clifford algebra layers.
+    A model for learning and predicting numerical literals along with KGE models with Clifford algebra layers.
     Unlike LiteralEmbeddingsClifford, this model takes entity embeddings as input during forward pass
     instead of storing them as parameters.
 
@@ -348,16 +348,20 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
         self.g = [-1]
         self.n_blades = 2 ** len(self.g)  # 4 blades for 2D Clifford algebra
         self.in_channels = ( self.embedding_dim * 2 // self.n_blades )  # Divide by number of blades
+        self.hid_channels = ( self.embedding_dim  // self.n_blades )  # Divide by number of blades
 
         # Clifford MLP components
         self.clif_1 = CliffordLinear( g=self.g, in_channels=self.in_channels,
             out_channels=self.in_channels, bias=True)
+        self.clif_hid = CliffordLinear( g=self.g, in_channels=self.in_channels,
+            out_channels=self.hid_channels, bias=True)
         self.out = CliffordLinear( g=self.g, in_channels=self.in_channels,
             out_channels=1, bias=True)
 
+        # layer norms
         self.dropout = nn.Dropout(p=dropout)  
         self.layer_norm = nn.LayerNorm([self.in_channels, self.n_blades])
-        # self.layer_norm2 = nn.LayerNorm([self.hid_channels, self.n_blades])
+        self.layer_norm2 = nn.LayerNorm([self.hid_channels, self.n_blades])
         
 
     def forward(self, entity_embeddings, attr_idx):
@@ -384,7 +388,7 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
 
         # Clifford linear transformation with layer norm and activation
         hid = self.dropout(self.layer_norm(F.elu(self.clif_1(x))))
-        # out = self.layer_norm2(self.clif_hid(hid))
+        out = self.layer_norm2(self.clif_hid(hid))
         out = self.out(hid)
         return out[:,:,0].flatten()
         

@@ -75,7 +75,9 @@ class Lit_Keci(Keci):
         a_emb = self.attribute_embeddings(attr_idx)
         tuple_emb = torch.cat((e_emb, a_emb), dim=1)  # [batch, 2 * emb_dim]
         # Reshape for Clifford algebra processing
-        x = tuple_emb.view(-1, self.in_channels, self.n_blades)
-        x_hid = self.clif_lit_in(x)
+        B, total = tuple_emb.shape
+        channels_per_blade = total // self.n_blades
+        x =  tuple_emb.view(B, self.n_blades, channels_per_blade).permute(0, 2, 1)
+        x_hid = self.clif_layer_norm(F.relu(self.clif_lit_in(x)))
         lit_score = self.clif_lit_out(x_hid)[:,:,0].flatten()
         return lit_score
