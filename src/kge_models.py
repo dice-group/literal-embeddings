@@ -20,19 +20,32 @@ class CLNN(BaseKGE):
         self.in_layer = FFLayer(g=self.g, in_channels = self.in_channels, out_channels= self.hid_channels, lr = self.learning_rate  )
         self.out_layer = FFOutLayer(g=self.g, in_channels = self.hid_channels,out_channels= self.out_channels, lr = self.learning_rate )
         
-
-    def get_input(self, x):
-        emb_head, emb_rel, emb_tail = self.get_triple_representation(x)
-        cat_inp = torch.cat((emb_head, emb_rel, emb_tail), dim=1)
-        B, total = cat_inp.shape
+    def reshape(self, x):
+        B, total = x.shape
         if total % self.n_blades != 0:
             raise ValueError(f"Total channels {total} not divisible by n_blades {self.n_blades}")
         channels_per_blade = total // self.n_blades
         # reshape and permute to (B, channels_per_blade, n_blades)
-        return cat_inp.view(B, self.n_blades, channels_per_blade).permute(0, 2, 1)
+        return x.view(B, self.n_blades, channels_per_blade).permute(0, 2, 1)
+    
+
+    def get_input(self, x):
+        emb_head, emb_rel, emb_tail = self.get_triple_representation(x)
+        cat_inp = torch.cat((emb_head, emb_rel, emb_tail), dim=1)
+        return self.reshape(cat_inp)
+        # B, total = cat_inp.shape
+        # if total % self.n_blades != 0:
+        #     raise ValueError(f"Total channels {total} not divisible by n_blades {self.n_blades}")
+        # channels_per_blade = total // self.n_blades
+        # # reshape and permute to (B, channels_per_blade, n_blades)
+        # return cat_inp.view(B, self.n_blades, channels_per_blade).permute(0, 2, 1)
 
     def score(self, h,r,t):
-        pass
+        inp = torch.cat((h,r,t), dim=1)
+        reshaped_inp = self.reshape(inp)
+        hid = self.in_layer.forward(reshaped_inp)
+        out = self.out_layer.forward(hid)
+        return out.squeeze(1)[:,0]
 
     def ff_update(self, x_pos, x_neg, optimier):
         optimier.zero_grad()

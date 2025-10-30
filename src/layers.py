@@ -44,7 +44,7 @@ class FFLayer(nn.Module):
     
 class FFOutLayer(nn.Module):
     def __init__(self, g,  in_channels : int, out_channels : int,
-                 lr :int,threshold : int = 2.0 ,    bias : bool = True):
+                 lr :int,threshold : int = 3.0 ,    bias : bool = True):
         super().__init__()
         self.g = g
         self.bias = bias
@@ -58,25 +58,30 @@ class FFOutLayer(nn.Module):
         self.optimizer = torch.optim.Adam(self.layer.parameters(), lr = self.lr)
     
     def forward(self, x):
-        return self.layer(x)
+        return self.layer(x)[:,0]
 
     def goodness(self, score):
         """Goodness for last layer = directly the scalar output"""
         return score.squeeze(1)  # (batch,)
+        #return score.pow(2).sum(dim=1)
 
     def train_step(self, x_pos, x_neg):
         act_pos = self.forward(x_pos)
         act_neg = self.forward(x_neg)
 
-        g_pos = self.goodness(act_pos)
-        g_neg = self.goodness(act_neg)
+        g_pos = self.goodness(act_pos) - self.threshold
+        g_neg = self.goodness(act_neg) - self.threshold
 
-        loss_pos = F.softplus(self.threshold - g_pos).mean()
-        loss_neg = F.softplus(g_neg - self.threshold).mean()
+        targets_pos = torch.ones_like(g_pos)
+        targets_neg = torch.zeros_like(g_neg)
+
+        loss_pos = F.binary_cross_entropy_with_logits(g_pos, targets_pos)
+        loss_neg = F.binary_cross_entropy_with_logits(g_neg, targets_neg)
 
         loss = loss_pos + loss_neg
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        return  loss.item()
+
+        return loss.item()
