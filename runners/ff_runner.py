@@ -41,7 +41,7 @@ def train_kge_ff(args):
     train_dataloader = DataLoader(
     train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_core
 )
-    supported_models = ["DistMult", "CLNN"]
+    supported_models = ["DistMult", "CLNN", "FFKGE"]
     assert args.model in supported_models , f"{args.model} not supported for forward-forward training"
 
     kge_model = get_ff_models(args)

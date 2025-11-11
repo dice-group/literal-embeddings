@@ -144,3 +144,123 @@ class DistMult(BaseKGE):
             "pos_goodness": g_pos.mean().item(),
             "neg_goodness": g_neg.mean().item()
         }
+    
+class FFInternalLayer(nn.Module):
+    """
+    Internal Forward-Forward layer with Hinton-style contrastive loss.
+    """
+    def __init__(self, dim, lr=1e-3):
+        super().__init__()
+        self.W_h = nn.Linear(dim*2, dim)
+        self.W_t = nn.Linear(dim*2, dim)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+
+    def forward(self, h, r, t):
+        h_next = F.relu(self.W_h(torch.cat([h, r], dim=-1)))
+        t_next = F.relu(self.W_t(torch.cat([t, r], dim=-1)))
+        return h_next, t_next
+
+    def goodness(self, h_next, t_next):
+        return (h_next * t_next).sum(dim=-1)
+
+    def compute_loss(self, h_pos, r_pos, t_pos, h_neg, r_neg, t_neg):
+        h_pos_next, t_pos_next = self.forward(h_pos, r_pos, t_pos)
+        h_neg_next, t_neg_next = self.forward(h_neg, r_neg, t_neg)
+        good_pos = self.goodness(h_pos_next, t_pos_next)
+        good_neg = self.goodness(h_neg_next, t_neg_next)
+        return -torch.log(torch.sigmoid(good_pos - good_neg)).mean()
+
+    def step(self, h_pos, r_pos, t_pos, h_neg, r_neg, t_neg):
+        loss = self.compute_loss(h_pos, r_pos, t_pos, h_neg, r_neg, t_neg)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return loss.item()
+
+
+class FFOutputLayer(nn.Module):
+    """
+    Output Forward-Forward layer trained with BCE, returns continuous scores for ranking.
+    """
+    def __init__(self, dim, lr=1e-3):
+        super().__init__()
+        self.W_h = nn.Linear(dim*2, dim)
+        self.W_t = nn.Linear(dim*2, dim)
+        self.bce_loss = nn.BCEWithLogitsLoss()
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+
+    def forward(self, h, r, t):
+        """
+        Returns continuous logits for ranking
+        """
+        h_next = F.relu(self.W_h(torch.cat([h, r], dim=-1)))
+        t_next = F.relu(self.W_t(torch.cat([t, r], dim=-1)))
+        logits = (h_next * t_next).sum(dim=-1)  # continuous score
+        return logits
+
+    def compute_loss(self, h_pos, r_pos, t_pos, h_neg, r_neg, t_neg):
+        logits_pos = self.forward(h_pos, r_pos, t_pos)
+        logits_neg = self.forward(h_neg, r_neg, t_neg)
+
+        logits = torch.cat([logits_pos, logits_neg], dim=0)
+        labels = torch.cat([torch.ones_like(logits_pos), torch.zeros_like(logits_neg)], dim=0)
+        loss = self.bce_loss(logits, labels)
+        return loss
+
+    def step(self, h_pos, r_pos, t_pos, h_neg, r_neg, t_neg):
+        loss = self.compute_loss(h_pos, r_pos, t_pos, h_neg, r_neg, t_neg)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return loss.item()
+
+    def score(self, h, r, t):
+        """
+        Returns continuous score for ranking/evaluation
+        """
+        logits = self.forward(h, r, t)
+        return logits  # use raw logits or torch.sigmoid(logits)
+
+
+class FFKGE(BaseKGE):
+    """
+    Two-layer FF-KGE model with separate optimizers and continuous scoring.
+    """
+    def __init__(self, args, lr1=1e-3, lr2=1e-3):
+        super().__init__(args)
+        self.name = "FFKGE"
+        self.layer1 = FFInternalLayer(self.embedding_dim, lr=lr1)
+        self.layer2 = FFOutputLayer(self.embedding_dim, lr=lr2)
+
+    def ff_update(self, x_pos, x_neg, optimizer=None):
+        # Get embeddings
+        h_pos, r_pos, t_pos = self.get_triple_representation(x_pos)
+        h_neg, r_neg, t_neg = self.get_triple_representation(x_neg)
+
+        # --- Layer1 update ---
+        loss1 = self.layer1.step(
+            h_pos.detach(), r_pos.detach(), t_pos.detach(),
+            h_neg.detach(), r_neg.detach(), t_neg.detach()
+        )
+
+        # --- Layer2 update ---
+        h1_pos_out, t1_pos_out = self.layer1.forward(h_pos.detach(), r_pos.detach(), t_pos.detach())
+        h1_neg_out, t1_neg_out = self.layer1.forward(h_neg.detach(), r_neg.detach(), t_neg.detach())
+
+        loss2 = self.layer2.step(
+            h1_pos_out.detach(), r_pos.detach(), t1_pos_out.detach(),
+            h1_neg_out.detach(), r_neg.detach(), t1_neg_out.detach()
+        )
+
+        total_loss = loss1 + loss2
+        return {"loss": total_loss}
+
+    def score(self,h,r,t):
+        """
+        Compute continuous score for a single triple.
+        """
+        # Forward through layer1
+        h1, t1 = self.layer1.forward(h, r, t)
+        # Forward through layer2 for score
+        score = self.layer2.score(h1, r, t1)
+        return score

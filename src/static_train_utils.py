@@ -1,4 +1,4 @@
-from src.callbacks import ASWA, EpochLevelProgressBar, PeriodicEvalCallback, BatchProcessCallback
+from src.callbacks import ASWA, EpochLevelProgressBar, PeriodicEvalCallback
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.stochastic_weight_avg import \
     StochasticWeightAveraging as SWA
@@ -146,10 +146,12 @@ def get_model(args, entity_dataset = None):
 
 
 def get_ff_models(args):
-    from .kge_models import DistMult, CLNN
+    from .kge_models import DistMult, CLNN, FFKGE
     if args.model == "DistMult":
         return DistMult(vars(args))
     elif args.model == "CLNN":
         return CLNN(vars(args))
+    elif args.model == "FFKGE":
+        return FFKGE(vars(args))
     else:
         raise ValueError(f"Unknown model: {args.model}")

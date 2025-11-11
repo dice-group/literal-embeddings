@@ -6,7 +6,7 @@ from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
 
 class FFLayer(nn.Module):
     def __init__(self, g,  in_channels : int, out_channels : int,
-                   lr :int, threshold : int = 1.0,   bias : bool = True):
+                   lr :int, threshold : int = 2.0,   bias : bool = True):
         super().__init__()
         self.g = g
         self.bias = bias
