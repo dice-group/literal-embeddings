@@ -114,7 +114,7 @@ def get_literal_components(args, entity_dataset):
             num_of_data_properties=literal_dataset.num_data_properties,
             embedding_dims=args.embedding_dim,
             dropout=getattr(args, 'dropout', 0.3),
-            gate_residual=False,
+            gate_residual=getattr(args, 'gate_residual', False),
             freeze_entity_embeddings=args.freeze_entity_embeddings_combined,
         )
     else:
