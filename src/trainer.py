@@ -31,14 +31,8 @@ class KGE_Literal(LightningModule):
     def training_step(self, batch,  batch_idx):
         #get batch_data 
         train_X, train_y, train_t = batch
-
-        # Forward through KGE model
-        if self.args.use_literals:
-            yhat_e, lit_loss = self.kge_model.forward_k_vs_all(train_X, train_t)  # (batch_size, num_entities)
-            ent_loss = self.bce_loss_fn(yhat_e, train_y) + 0.01 *lit_loss
-        else:
-            yhat_e = self.kge_model.forward_k_vs_all(train_X)  # (batch_size, num_entities)
-            ent_loss = self.bce_loss_fn(yhat_e, train_y)
+        yhat_e = self.kge_model.forward(train_X)  # (batch_size, num_entities)
+        ent_loss = self.bce_loss_fn(yhat_e, train_y)
         self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=train_X.size(0))
 
         # Literal model (if active)

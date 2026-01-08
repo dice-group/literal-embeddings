@@ -113,7 +113,7 @@ def get_default_arguments(args_list=None):
             "Pykeen_ComplEx",
             "LFMult",
             "DeCaL",
-            "Lit_Keci"
+            "CLNN_KGE",
         ],
         help="Available knowledge graph embedding models. "
         "To use other knowledge graph embedding models available in python, e.g.,"
@@ -215,7 +215,7 @@ def get_default_arguments(args_list=None):
     parser.add_argument(
         "--num_core",
         type=int,
-        default=0,
+        default=1,
         help="Number of cores to be used. 0 implies using single CPU",
     )
     parser.add_argument(
