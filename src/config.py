@@ -318,6 +318,12 @@ def get_default_arguments(args_list=None):
         help="Combined Training of KGE and Literal Embedding Model",
     )
     parser.add_argument(
+        "--use_literals",
+        action="store_true",
+        default=False,
+        help="Use literals for conditioning KGE scores",
+    )
+    parser.add_argument(
         "--literal_training",
         action="store_true",
         default=False,
