@@ -133,7 +133,7 @@ def get_literal_components(args, entity_dataset):
 def get_model(args, entity_dataset = None):
     kge_model = None
     if args.model == "CLNN_KGE":
-            kge_model = CLNN_KGE(args=vars(args))
+            kge_model = CLNN_KGE(args=vars(args), entity2idx=entity_dataset.entity_to_idx)
     else:
         kge_model, _ = intialize_model(vars(args), 0)
     return kge_model

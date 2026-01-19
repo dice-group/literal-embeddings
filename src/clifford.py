@@ -16,6 +16,62 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import pandas as pd
+import torch
+
+def load_num_lit(ent2idx, dataset_dir, lit_norm="zscore", wrap=True, device=None):
+    df = pd.read_csv(
+        f"{dataset_dir}/literals/numerical_literals.txt",
+        names=["ent", "attribute", "value"],
+        sep="\t",
+    )
+
+    # Build attr2idx: attribute -> integer id (stable)
+    attrs = pd.Index(df["attribute"].unique())
+    attr2idx = {attr: i for i, attr in enumerate(attrs)}
+
+    # Map to indices
+    df["ent_idx"] = df["ent"].map(ent2idx)
+    df["attr_idx"] = df["attribute"].map(attr2idx)
+
+    # Drop rows that didn't map (unseen ent or attr)
+    df = df.dropna(subset=["ent_idx", "attr_idx", "value"]).copy()
+    df["ent_idx"] = df["ent_idx"].astype("int64")
+    df["attr_idx"] = df["attr_idx"].astype("int64")
+
+    # Normalize per attribute (z-score by default)
+    if lit_norm in (None, "none"):
+        df["value_norm"] = df["value"].astype("float32")
+    elif lit_norm in ("z", "zscore"):
+        g = df.groupby("attribute")["value"]
+        mean = g.transform("mean")
+        std = g.transform("std").replace(0, 1)  # avoid divide-by-zero
+        df["value_norm"] = ((df["value"] - mean) / std).astype("float32")
+    elif lit_norm in ("minmax", "min_max"):
+        g = df.groupby("attribute")["value"]
+        vmin = g.transform("min")
+        vmax = g.transform("max")
+        denom = (vmax - vmin).replace(0, 1)
+        df["value_norm"] = ((df["value"] - vmin) / denom).astype("float32")
+    else:
+        raise ValueError(f"Unknown lit_norm: {lit_norm}")
+
+    n_ent = len(ent2idx)
+    n_attr = len(attr2idx)
+
+    ea = torch.zeros((n_ent, n_attr), dtype=torch.float32, device=device)
+    ea_vals = torch.zeros((n_ent, n_attr), dtype=torch.float32, device=device)
+
+    e = df["ent_idx"].to_numpy()
+    a = df["attr_idx"].to_numpy()
+    v = df["value_norm"].to_numpy()
+
+    ea[e, a] = 1.0
+    ea_vals[e, a] = torch.as_tensor(v, dtype=ea_vals.dtype, device=ea_vals.device)
+
+    return ea, ea_vals
+
+
 def batched_kronecker(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """
     Computes the Kronecker product of two batched vectors.
@@ -42,7 +98,7 @@ def batched_kronecker(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 
 class CLNN_KGE(BaseKGE):
-    def __init__(self, args, edge_index=None, edge_type=None):
+    def __init__(self, args, edge_index=None, edge_type=None, entity2idx=None):
         super().__init__(args)
         self.name = "CLNN_KGE"
 
@@ -72,6 +128,19 @@ class CLNN_KGE(BaseKGE):
         self.clif_out = CliffordLinear(g=self.g, in_channels=self.C , out_channels=self.C, bias=True)
 
         self.clif_layer_norm = nn.LayerNorm([self.C , self.n_blades])
+
+        if args.get("use_literals", False):
+            self.entity_to_idx = ( entity2idx if isinstance(entity2idx, dict)
+                else {v: i for i, v in entity2idx["entity"].items()} )
+            self.ea_masks, self.ea_vals = load_num_lit(self.entity_to_idx, args["dataset_dir"])
+            self.lit_encoder = NumericLiteralEncoder(
+                num_attributes=self.ea_masks.size(1),
+                emb_dim=self.embedding_dim,
+                vals=self.ea_vals,
+                mask=self.ea_masks,
+                ).to(self.device)   
+
+
 
     def to_hypercomplex(self, x: torch.Tensor, n_components: int) -> torch.Tensor:
         """
@@ -117,6 +186,8 @@ class CLNN_KGE(BaseKGE):
 
     def forward_k_vs_all(self, x: torch.Tensor) -> torch.Tensor:
         emb_head, emb_rel = self.get_head_relation_representation(x)  # expected flat (B, embedding_dim)
+        lit_emb = self.lit_encoder(x[:,0]) if hasattr(self, "lit_encoder") else 0.0
+        emb_head = emb_head + lit_emb
         return self.k_vs_all_score(emb_h=emb_head, emb_r=emb_rel)
 
     def forward_k_vs_sample(self, x: torch.LongTensor, target_entity_idx: torch.LongTensor):
@@ -298,3 +369,87 @@ class CliffordMessagePassing(nn.Module):
 
     
         
+import torch
+import torch.nn as nn
+
+class NumericLiteralEncoder(nn.Module):
+    """
+    Encode numeric literals (with missingness) into a dense embedding.
+
+    vals, mask: (num_entities, L)
+    forward(entity_ids) -> (B, emb_dim)
+    """
+    def __init__(
+        self,
+        num_attributes: int,
+        emb_dim: int,
+        vals: torch.Tensor,
+        mask: torch.Tensor,
+    ):
+        super().__init__()
+        self.L = num_attributes
+        self.emb_dim = emb_dim
+
+        # Store full literal matrices
+        self.register_buffer("vals", vals)   # (N, L)
+        self.register_buffer("mask", mask)   # (N, L)
+
+        # Field (attribute) identity embeddings
+        self.field_emb = nn.Parameter(
+            torch.randn(num_attributes, emb_dim) * 0.01
+        )
+
+        # Value -> token (shared across attributes)
+        self.value_mlp = nn.Sequential(
+            nn.Linear(1, emb_dim),
+            nn.ReLU(),
+            nn.Linear(emb_dim, emb_dim),
+        )
+
+        # Attention scorer
+        self.att_mlp = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim),
+            nn.ReLU(),
+            nn.Linear(emb_dim, 1),
+        )
+
+        self.ln = nn.LayerNorm(emb_dim)
+
+    def forward(self, entity_ids: torch.Tensor) -> torch.Tensor:
+        """
+        entity_ids: (B,)
+        returns: (B, emb_dim)
+        """
+        if entity_ids.dim() != 1:
+            entity_ids = entity_ids.view(-1)
+
+        entity_ids = entity_ids.to(
+            device=self.vals.device, dtype=torch.long
+        )
+
+        # Gather literals for batch entities
+        vals = self.vals.index_select(0, entity_ids)        # (B, L)
+        mask = self.mask.index_select(0, entity_ids).float()  # (B, L)
+
+        # Value tokens
+        vtok = self.value_mlp(vals.unsqueeze(-1).float())   # (B, L, emb_dim)
+
+        # Add field identity
+        tok = self.ln(vtok + self.field_emb.unsqueeze(0))   # (B, L, emb_dim)
+
+        # Attention
+        logits = self.att_mlp(tok).squeeze(-1)              # (B, L)
+        logits = logits.masked_fill(mask == 0, -1e9)
+
+        # Handle entities with all literals missing
+        all_missing = (mask.sum(dim=1) == 0)
+        if all_missing.any():
+            logits = logits.clone()
+            logits[all_missing] = 0.0
+
+        alpha = torch.softmax(logits, dim=1)                # (B, L)
+
+        # Pool
+        emb = (alpha.unsqueeze(-1) * tok).sum(dim=1)        # (B, emb_dim)
+        return emb
+
