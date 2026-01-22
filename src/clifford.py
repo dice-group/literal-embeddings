@@ -106,7 +106,7 @@ class CLNN_KGE(BaseKGE):
         self.edge_type = edge_type
 
         # Clifford algebra parameters
-        self.g = [-1]
+        self.g = [-1, -1]
         self.n_blades = 2 ** len(self.g)  # for g=[-1], n_blades=2
 
         if self.embedding_dim % self.n_blades != 0:
@@ -119,7 +119,8 @@ class CLNN_KGE(BaseKGE):
 
         # MLP input channels after concatenating h and r in hypercomplex form:
         # emb_h: (B, C, n_blades), emb_r: (B, C, n_blades) -> cat along channel dim -> (B, 2C, n_blades)
-        self.in_channels = self.C * self.C *2
+        self.in_channels = self.C
+        self.mul_vec_act = None
 
         
 
@@ -133,7 +134,7 @@ class CLNN_KGE(BaseKGE):
             self.entity_to_idx = ( entity2idx if isinstance(entity2idx, dict)
                 else {v: i for i, v in entity2idx["entity"].items()} )
             self.ea_masks, self.ea_vals = load_num_lit(self.entity_to_idx, args["dataset_dir"])
-            self.lit_encoder = NumericLiteralEncoder(
+            self.lit_encoder = AttrAffineScaleEncoder(
                 num_attributes=self.ea_masks.size(1),
                 emb_dim=self.embedding_dim,
                 vals=self.ea_vals,
@@ -160,12 +161,12 @@ class CLNN_KGE(BaseKGE):
             scores: (B, num_entities)
         """
         # 1) reshape to hypercomplex
-        # h_hc = self.to_hypercomplex(emb_h, n_components=self.n_blades)  # (B, C, n_blades)
-        # r_hc = self.to_hypercomplex(emb_r, n_components=self.n_blades)  # (B, C, n_blades)
+        h_hc = self.to_hypercomplex(emb_h, n_components=self.n_blades)  # (B, C, n_blades)
+        r_hc = self.to_hypercomplex(emb_r, n_components=self.n_blades)  # (B, C, n_blades)
 
-        x = batched_kronecker(emb_h, emb_r)
-        x = self.to_hypercomplex(x, n_components=self.n_blades)
-
+        # x = batched_kronecker(emb_h, emb_r)
+        # x = self.to_hypercomplex(x, n_components=self.n_blades)
+        x = h_hc * r_hc  # (B, C, n_blades)
         #x = torch.cat([h_hc, r_hc, hr], dim=1)
 
         # 2) Clifford-MLP to produce query q_hr
@@ -372,84 +373,23 @@ class CliffordMessagePassing(nn.Module):
 import torch
 import torch.nn as nn
 
-class NumericLiteralEncoder(nn.Module):
-    """
-    Encode numeric literals (with missingness) into a dense embedding.
-
-    vals, mask: (num_entities, L)
-    forward(entity_ids) -> (B, emb_dim)
-    """
-    def __init__(
-        self,
-        num_attributes: int,
-        emb_dim: int,
-        vals: torch.Tensor,
-        mask: torch.Tensor,
-    ):
+class AttrAffineScaleEncoder(nn.Module):
+    def __init__(self, num_attributes: int, emb_dim: int,
+                 vals: torch.Tensor, mask: torch.Tensor):
         super().__init__()
-        self.L = num_attributes
-        self.emb_dim = emb_dim
+        self.register_buffer("vals", vals)
+        self.register_buffer("mask", mask)
 
-        # Store full literal matrices
-        self.register_buffer("vals", vals)   # (N, L)
-        self.register_buffer("mask", mask)   # (N, L)
-
-        # Field (attribute) identity embeddings
-        self.field_emb = nn.Parameter(
-            torch.randn(num_attributes, emb_dim) * 0.01
-        )
-
-        # Value -> token (shared across attributes)
-        self.value_mlp = nn.Sequential(
-            nn.Linear(1, emb_dim),
-            nn.ReLU(),
-            nn.Linear(emb_dim, emb_dim),
-        )
-
-        # Attention scorer
-        self.att_mlp = nn.Sequential(
-            nn.Linear(emb_dim, emb_dim),
-            nn.ReLU(),
-            nn.Linear(emb_dim, 1),
-        )
-
-        self.ln = nn.LayerNorm(emb_dim)
+        self.attr_emb = nn.Parameter(torch.randn(num_attributes, emb_dim) * 0.01)
+        self.a = nn.Parameter(torch.ones(num_attributes))   # scale per attribute
+        self.b = nn.Parameter(torch.zeros(num_attributes))  # bias per attribute
 
     def forward(self, entity_ids: torch.Tensor) -> torch.Tensor:
-        """
-        entity_ids: (B,)
-        returns: (B, emb_dim)
-        """
-        if entity_ids.dim() != 1:
-            entity_ids = entity_ids.view(-1)
+        ids = entity_ids.reshape(-1).to(self.vals.device, torch.long)
+        v = self.vals[ids].float()        # (B, L)
+        m = self.mask[ids].float()        # (B, L)
 
-        entity_ids = entity_ids.to(
-            device=self.vals.device, dtype=torch.long
-        )
+        w = (self.a.unsqueeze(0) * v + self.b.unsqueeze(0)) * m   # (B, L)
+        return w @ self.attr_emb                                  # (B, D)
 
-        # Gather literals for batch entities
-        vals = self.vals.index_select(0, entity_ids)        # (B, L)
-        mask = self.mask.index_select(0, entity_ids).float()  # (B, L)
-
-        # Value tokens
-        vtok = self.value_mlp(vals.unsqueeze(-1).float())   # (B, L, emb_dim)
-
-        # Add field identity
-        tok = self.ln(vtok + self.field_emb.unsqueeze(0))   # (B, L, emb_dim)
-
-        # Attention
-        logits = self.att_mlp(tok).squeeze(-1)              # (B, L)
-        logits = logits.masked_fill(mask == 0, -1e9)
-
-        # Handle entities with all literals missing
-        all_missing = (mask.sum(dim=1) == 0)
-        if all_missing.any():
-            logits = logits.clone()
-            logits[all_missing] = 0.0
-
-        alpha = torch.softmax(logits, dim=1)                # (B, L)
-
-        # Pool
-        emb = (alpha.unsqueeze(-1) * tok).sum(dim=1)        # (B, emb_dim)
-        return emb
 
