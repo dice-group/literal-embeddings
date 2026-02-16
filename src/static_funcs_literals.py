@@ -138,7 +138,7 @@ def get_litem_model(args, literal_dataset, kge_model, run ):
     return literal_model
 
 
-def get_final_results_df(lit_results: list, lit_loss: list) -> tuple[pd.DataFrame, pd.DataFrame]:
+def get_final_results_df(lit_results: list, lit_loss: list) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Convert literal results and losses from multiple runs into DataFrames.
 
@@ -147,6 +147,7 @@ def get_final_results_df(lit_results: list, lit_loss: list) -> tuple[pd.DataFram
     """
     final_results_df = None
     final_loss_df = None
+    results_summary_df = None
 
     n_runs = len(lit_results)  # number of runs
 
@@ -175,7 +176,23 @@ def get_final_results_df(lit_results: list, lit_loss: list) -> tuple[pd.DataFram
         else:
             final_loss_df = pd.concat([final_loss_df, df_loss], axis=1)
 
-    return final_results_df, final_loss_df
+    # Build per-relation summary across runs:
+    # mean, std, and formatted mean +- std for MAE/RMSE.
+    if final_results_df is not None:
+        results_summary_df = final_results_df[["relation"]].copy()
+        for metric in ("MAE", "RMSE"):
+            run_cols = [c for c in final_results_df.columns if c == metric or c.startswith(f"{metric}_run_")]
+            if not run_cols:
+                continue
+            results_summary_df[f"{metric}_mean"] = final_results_df[run_cols].mean(axis=1)
+            results_summary_df[f"{metric}_std"] = final_results_df[run_cols].std(axis=1, ddof=0)
+            results_summary_df[f"{metric}_mean_pm_std"] = (
+                results_summary_df[f"{metric}_mean"].round(6).astype(str)
+                + " +- "
+                + results_summary_df[f"{metric}_std"].round(6).astype(str)
+            )
+
+    return final_results_df, final_loss_df, results_summary_df
 
 
 def save_literal_experiments(args=None, literal_model=None, lit_results=None, lit_losses=None, attr_to_idx=None):
@@ -184,7 +201,7 @@ def save_literal_experiments(args=None, literal_model=None, lit_results=None, li
 
     # Ensure output directory exists
     os.makedirs(args.full_storage_path, exist_ok=True)
-    results_df, loss_df = get_final_results_df(lit_results, lit_losses)
+    results_df, loss_df, results_summary_df = get_final_results_df(lit_results, lit_losses)
 
     # Save experiment configuration
     # Ensure device is JSON serializable
@@ -199,6 +216,12 @@ def save_literal_experiments(args=None, literal_model=None, lit_results=None, li
     if results_df is not None:
         results_path = os.path.join(args.full_storage_path, "lit_eval_results.csv")
         results_df.to_csv(results_path, index=False)
+    if results_summary_df is not None:
+        summary_path = os.path.join(args.full_storage_path, "lit_eval_results_summary.csv")
+        results_summary_df.to_csv(summary_path, index=False)
+        mean_cols = [c for c in results_summary_df.columns if c == "relation" or c.endswith("_mean")]
+        mean_path = os.path.join(args.full_storage_path, "lit_eval_results_mean.csv")
+        results_summary_df[mean_cols].to_csv(mean_path, index=False)
     
     # Save literal model state (if provided)
     if literal_model is not None:

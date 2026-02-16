@@ -7,9 +7,9 @@ from torch.utils.data import DataLoader
 
 from src.callbacks import (ASWA, EpochLevelProgressBar,
                            PeriodicEvalCallback)
-from src.clifford import Lit_Keci
 from src.dataset import KvsAll, LiteralDataset, OnevsAllDataset
 from src.model import LiteralEmbeddingsCliffordExt, LiteralEmbeddingsExt
+from src.literal_EA import DistMult_LiteralE, ComplEx_LiteralE
 
 
 def get_callbacks(args):
@@ -124,8 +124,11 @@ def get_literal_components(args, entity_dataset):
 
 
 def get_model(args, entity_dataset = None):
-    if args.model == "Lit_Keci":
-        kge_model = Lit_Keci(args=vars(args), ent2idx=entity_dataset.entity_to_idx,
+    if args.model == "DistMult_LiteralE":
+        kge_model = DistMult_LiteralE(args=vars(args), ent2idx=entity_dataset.entity_to_idx,
+                              rel2idx=entity_dataset.relation_to_idx)
+    elif args.model == "ComplEx_LiteralE":
+        kge_model = ComplEx_LiteralE(args=vars(args), ent2idx=entity_dataset.entity_to_idx,
                               rel2idx=entity_dataset.relation_to_idx)
     else:
         kge_model, _ = intialize_model(vars(args), 0)

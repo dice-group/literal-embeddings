@@ -1,11 +1,10 @@
 from datetime import datetime
-
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
+from src.static_funcs import create_and_save_report
 from pytorch_lightning import LightningModule
 
-from src.static_funcs import create_and_save_report
 
 
 class KGE_Literal(LightningModule):
@@ -16,6 +15,7 @@ class KGE_Literal(LightningModule):
         self.args = args
         self.literal_dataset = literal_dataset
         self.bce_loss_fn = torch.nn.BCEWithLogitsLoss()
+        self.log_vars = torch.nn.Parameter(torch.zeros(2))
 
     def model_device(self):
         """Check if all models are on same device"""
@@ -43,7 +43,7 @@ class KGE_Literal(LightningModule):
         self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=train_X.size(0))
 
         # Literal model (if active)
-        if self.Literal_model and self.current_epoch > self.args.deferred_literal_training_epochs:
+        if self.Literal_model and self.current_epoch >= self.args.deferred_literal_training_epochs:
             head = train_X[:, 0].long()
             tail = train_t.flatten().long()
             # stacking head and tail together along a new dimension
@@ -55,6 +55,10 @@ class KGE_Literal(LightningModule):
                 lit_properties.to(self.device),
                 y_true.to(self.device),
             )
+            # Skip literal loss if batch has no literal triples.
+            if lit_entities.numel() == 0:
+                print("No literal triples in this batch, skipping literal loss computation.")
+                return ent_loss
             ent_embeds = self.kge_model.entity_embeddings(lit_entities)
             # Ensure embeddings are on the same device as the literal model
             ent_embeds = ent_embeds.to(self.device)
@@ -62,12 +66,12 @@ class KGE_Literal(LightningModule):
             lit_loss = F.l1_loss(yhat_lit, y_true)
             self.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=head.size(0))
 
-            # Combined loss
-            scale = torch.log1p(
-                2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
-            ).detach()
-            scale = torch.clamp(scale, min = 1e-9, max= 0.99999)
-            total_loss = (1 - scale) * ent_loss + scale * lit_loss
+            # Combined loss (uncertainty-weighted)
+            s_ent, s_lit = self.log_vars[0], self.log_vars[1]
+            total_loss = (
+                torch.exp(-s_ent) * ent_loss + s_ent +
+                torch.exp(-s_lit) * lit_loss + s_lit
+            )
             return total_loss
 
         else:
@@ -87,6 +91,7 @@ class KGE_Literal(LightningModule):
                 [
                     {"params": self.kge_model.parameters(), "lr": self.args.lr},
                     {"params": self.Literal_model.parameters(), "lr": self.args.lit_lr},
+                    {"params": [self.log_vars], "lr": self.args.lr},
                 ]
             )
         else:
@@ -107,5 +112,3 @@ class KGE_Literal(LightningModule):
             during_training=False
         )
         create_and_save_report(self)
-
-        
