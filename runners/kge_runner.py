@@ -32,6 +32,11 @@ def train_kge_model(args):
     train_dataloader, valid_dataloader = get_dataloaders(args, entity_dataset)
 
     kge_model = get_model(args = args, entity_dataset=entity_dataset)
+    total_params = sum(p.numel() for p in kge_model.parameters())
+    trainable_params = sum(p.numel() for p in kge_model.parameters() if p.requires_grad)
+    print(
+        f"KGE parameters: trainable={trainable_params:,}, total={total_params:,}"
+    )
     literal_dataset, Literal_model = None, None
 
     # Combined training and literal model setup

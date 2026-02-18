@@ -27,6 +27,8 @@ def train_literals(args):
     # Load and Access components using the dataclass attributes
     model_components = load_model_components(args.pretrained_kge_path)
     kge_model = model_components.model
+    total_params = sum(p.numel() for p in kge_model.parameters())
+    trainable_params = sum(p.numel() for p in kge_model.parameters() if p.requires_grad)
     e2idx = model_components.entity_to_idx
     args.embedding_dim = model_components.embedding_dim
     args.model = model_components.model_name
@@ -34,6 +36,9 @@ def train_literals(args):
     
     print(f"Training Literal Embedding model using pre-trained KGE model at {args.pretrained_kge_path}")
     print(f"Using literal model type: {args.literal_model}")
+    print(
+        f"KGE parameters: trainable={trainable_params:,}, total={total_params:,}"
+    )
 
     args.full_storage_path = get_full_storage_path_literals(args,dataset_name)
     literal_dataset, literal_dataloader = get_literal_datasets(args, e2idx)
