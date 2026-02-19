@@ -143,6 +143,43 @@ def get_default_arguments(args_list=None):
         help="Mini batch size. If None, automatic batch finder is applied",
     )
     parser.add_argument("--lr", type=float, default=0.05)
+    parser.add_argument(
+        "--ff_pos_weight",
+        type=float,
+        default=1.0,
+        help="Weight for positive loss term in Forward-Forward training.",
+    )
+    parser.add_argument(
+        "--ff_neg_weight",
+        type=float,
+        default=1.0,
+        help="Weight for negative loss term in Forward-Forward training.",
+    )
+    parser.add_argument(
+        "--ff_out_agg",
+        type=str,
+        default="mean",
+        choices=["blade0", "mean", "max", "learned"],
+        help="Aggregation mode over Clifford blades for FF output scoring.",
+    )
+    parser.add_argument(
+        "--ff_filtered_negatives",
+        action="store_true",
+        default=False,
+        help="Use filtered negative sampling in FF training (avoid known true triples).",
+    )
+    parser.add_argument(
+        "--ff_hard_negative_ratio",
+        type=float,
+        default=0.0,
+        help="Fraction of FF negatives sampled as hard negatives from same-relation entity pools.",
+    )
+    parser.add_argument(
+        "--ff_max_filter_retries",
+        type=int,
+        default=10,
+        help="Maximum retries when resampling a filtered FF negative.",
+    )
     parser.add_argument("--lit_lr", type=float, default=0.001)
     parser.add_argument("--lit_epochs", type=int, default=200)
     parser.add_argument(

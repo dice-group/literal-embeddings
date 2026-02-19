@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
+from .clifford_layer import CliffordLinear
 
 
 class LiteralEmbeddings(nn.Module):
@@ -417,4 +417,3 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
     @property
     def device(self):
         return next(self.parameters()).device
-

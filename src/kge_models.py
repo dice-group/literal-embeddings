@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from dicee.models import BaseKGE
 
@@ -10,51 +11,180 @@ class CLNN(BaseKGE):
         super().__init__(args)
         self.name = "CLNN"
 
-        self.g = [-1]
+        self.g = args.get("clifford_g", [-1])
         self.n_blades = 2 ** (len(self.g))
         self.embedding_dim = args.get('embedding_dim', 32)
         self.in_channels = self.embedding_dim * 3 // self.n_blades
         self.hid_channels = self.embedding_dim * 3 // self.n_blades
         self.out_channels = 1
+        self.ff_pos_weight = float(args.get("ff_pos_weight", 1.0))
+        self.ff_neg_weight = float(args.get("ff_neg_weight", 1.0))
+        self.ff_out_agg = args.get("ff_out_agg", "mean")
 
-        self.in_layer = FFLayer(g=self.g, in_channels = self.in_channels, out_channels= self.hid_channels, lr = self.learning_rate  )
-        self.out_layer = FFOutLayer(g=self.g, in_channels = self.hid_channels,out_channels= self.out_channels, lr = self.learning_rate )
+        self.in_layer = FFLayer(
+            g=self.g,
+            in_channels=self.in_channels,
+            out_channels=self.hid_channels,
+            lr=self.learning_rate,
+            pos_weight=self.ff_pos_weight,
+            neg_weight=self.ff_neg_weight,
+        )
+        self.out_layer = FFOutLayer(
+            g=self.g,
+            in_channels=self.hid_channels,
+            out_channels=self.out_channels,
+            lr=self.learning_rate,
+            pos_weight=self.ff_pos_weight,
+            neg_weight=self.ff_neg_weight,
+            agg_mode=self.ff_out_agg,
+        )
         
-    def reshape(self, x):
-        B, total = x.shape
-        if total % self.n_blades != 0:
-            raise ValueError(f"Total channels {total} not divisible by n_blades {self.n_blades}")
-        channels_per_blade = total // self.n_blades
-        # reshape and permute to (B, channels_per_blade, n_blades)
-        return x.view(B, self.n_blades, channels_per_blade).permute(0, 2, 1)
+    @staticmethod
+    def to_hypercomplex(x: torch.Tensor, n_components: int) -> torch.Tensor:
+        """
+        x: (..., n_components * d)
+        returns: (..., d, n_components)
+        """
+        if x.shape[-1] % n_components != 0:
+            raise ValueError(f"Last dimension ({x.shape[-1]}) not divisible by {n_components}")
+        return x.reshape(*x.shape[:-1], n_components, -1).transpose(-2, -1)
     
 
     def get_input(self, x):
         emb_head, emb_rel, emb_tail = self.get_triple_representation(x)
-        cat_inp = torch.cat((emb_head, emb_rel, emb_tail), dim=1)
-        return self.reshape(cat_inp)
-        # B, total = cat_inp.shape
-        # if total % self.n_blades != 0:
-        #     raise ValueError(f"Total channels {total} not divisible by n_blades {self.n_blades}")
-        # channels_per_blade = total // self.n_blades
-        # # reshape and permute to (B, channels_per_blade, n_blades)
-        # return cat_inp.view(B, self.n_blades, channels_per_blade).permute(0, 2, 1)
+        h_hc = self.to_hypercomplex(emb_head, n_components=self.n_blades)
+        r_hc = self.to_hypercomplex(emb_rel, n_components=self.n_blades)
+        t_hc = self.to_hypercomplex(emb_tail, n_components=self.n_blades)
+        return torch.cat((h_hc, r_hc, t_hc), dim=1)
 
     def score(self, h,r,t):
-        inp = torch.cat((h,r,t), dim=1)
-        reshaped_inp = self.reshape(inp)
-        hid = self.in_layer.forward(reshaped_inp)
+        h_hc = self.to_hypercomplex(h, n_components=self.n_blades)
+        r_hc = self.to_hypercomplex(r, n_components=self.n_blades)
+        t_hc = self.to_hypercomplex(t, n_components=self.n_blades)
+        hc_inp = torch.cat((h_hc, r_hc, t_hc), dim=1)
+        hid = self.in_layer.forward(hc_inp)
         out = self.out_layer.forward(hid)
-        return out.squeeze(1)[:,0]
+        return out
 
-    def ff_update(self, x_pos, x_neg, optimier):
-        optimier.zero_grad()
+    def forward_k_vs_all(self, x: torch.LongTensor):
+        """Scores all candidate tails for each (head, relation) pair.
+
+        x: (B, 2) where columns are (h, r)
+        returns: (B, num_entities)
+        """
+        emb_head, emb_rel = self.get_head_relation_representation(x)
+        emb_tail_all = self.entity_embeddings.weight  # (E, D)
+
+        h_hc = self.to_hypercomplex(emb_head, n_components=self.n_blades)      # (B, C, I)
+        r_hc = self.to_hypercomplex(emb_rel, n_components=self.n_blades)       # (B, C, I)
+        t_hc_all = self.to_hypercomplex(emb_tail_all, n_components=self.n_blades)  # (E, C, I)
+
+        bsz = h_hc.size(0)
+        num_entities = t_hc_all.size(0)
+
+        h_exp = h_hc.unsqueeze(1).expand(bsz, num_entities, -1, -1)
+        r_exp = r_hc.unsqueeze(1).expand(bsz, num_entities, -1, -1)
+        t_exp = t_hc_all.unsqueeze(0).expand(bsz, num_entities, -1, -1)
+
+        # Merge (B, E) to run the Clifford layers in a single batched call.
+        hc_inp = torch.cat((h_exp, r_exp, t_exp), dim=2).reshape(
+            bsz * num_entities, -1, self.n_blades
+        )
+        hid = self.in_layer.forward(hc_inp)
+        out = self.out_layer.forward(hid)  # (B*E,)
+        return out.view(bsz, num_entities)
+
+    def ff_update(self, x_pos, x_neg, optimizer):
         x_pos_inp = self.get_input(x_pos)
         x_pos_neg = self.get_input(x_neg)
-        hid_pos, hid_neg, hid_loss = self.in_layer.train_step(x_pos_inp, x_pos_neg)
-        out_loss = self.out_layer.train_step(hid_pos.detach(), hid_neg.detach())
-        total_loss = hid_loss + out_loss
-        return { "loss": total_loss }
+        hid_pos, hid_neg, hid_loss, hid_loss_pos, hid_loss_neg = self.in_layer.train_step(x_pos_inp, x_pos_neg)
+
+        # Step 1: update layer-1 with its local FF objective.
+        optimizer.zero_grad()
+        hid_loss.backward()
+        optimizer.step()
+
+        # Recompute hidden activations after layer-1 update for layer-2 training.
+        with torch.no_grad():
+            hid_pos = self.in_layer.forward(x_pos_inp)
+            hid_neg = self.in_layer.forward(x_pos_neg)
+
+        # Step 2: update layer-2 with fresh hidden states.
+        out_loss, out_loss_pos, out_loss_neg = self.out_layer.train_step(hid_pos.detach(), hid_neg.detach())
+        optimizer.zero_grad()
+        out_loss.backward()
+        optimizer.step()
+
+        total_loss = hid_loss.detach() + out_loss.detach()
+        return {
+            "loss": float(total_loss.item()),
+            "hid_loss": hid_loss.item(),
+            "out_loss": out_loss.item(),
+            "hid_pos_loss": hid_loss_pos.item(),
+            "hid_neg_loss": hid_loss_neg.item(),
+            "out_pos_loss": out_loss_pos.item(),
+            "out_neg_loss": out_loss_neg.item(),
+        }
+
+    def ff_update_kvsall(
+        self,
+        x_hr: torch.Tensor,
+        y_vec: torch.Tensor,
+        target_tails,
+        optimizer,
+        num_entities: int,
+        num_negatives: int = 32,
+        use_all_negatives: bool = False,
+    ):
+        """FF update from KvsAll-style (h,r)->tails batches.
+
+        Converts multi-label tail targets into explicit positive/negative triples,
+        then reuses the regular FF two-step layer-local update.
+        """
+        del y_vec  # target_tails already carries positive labels per (h,r)
+        device = x_hr.device
+
+        pos_chunks = []
+        neg_chunks = []
+        for i in range(x_hr.size(0)):
+            h = int(x_hr[i, 0].item())
+            r = int(x_hr[i, 1].item())
+            pos_t = target_tails[i]
+            if not isinstance(pos_t, torch.Tensor):
+                pos_t = torch.as_tensor(pos_t, dtype=torch.long)
+            pos_t = pos_t.long().to(device)
+            if pos_t.numel() == 0:
+                continue
+
+            # Positive triples for all true tails of this (h,r).
+            pos_hr = x_hr[i].unsqueeze(0).repeat(pos_t.numel(), 1)
+            pos_chunk = torch.stack((pos_hr[:, 0], pos_hr[:, 1], pos_t), dim=1)
+            pos_chunks.append(pos_chunk)
+
+            # Build candidate negatives as non-target entities.
+            is_target = torch.zeros(num_entities, dtype=torch.bool, device=device)
+            is_target[pos_t] = True
+            neg_candidates = torch.nonzero(~is_target, as_tuple=False).squeeze(1)
+            if neg_candidates.numel() == 0:
+                continue
+
+            if use_all_negatives:
+                sampled_neg_t = neg_candidates
+            else:
+                k = min(int(num_negatives) * max(1, pos_t.numel()), int(neg_candidates.numel()))
+                perm = torch.randperm(neg_candidates.numel(), device=device)[:k]
+                sampled_neg_t = neg_candidates[perm]
+
+            neg_hr = x_hr[i].unsqueeze(0).repeat(sampled_neg_t.numel(), 1)
+            neg_chunk = torch.stack((neg_hr[:, 0], neg_hr[:, 1], sampled_neg_t), dim=1)
+            neg_chunks.append(neg_chunk)
+
+        if len(pos_chunks) == 0 or len(neg_chunks) == 0:
+            return {"loss": 0.0}
+
+        x_pos = torch.cat(pos_chunks, dim=0)
+        x_neg = torch.cat(neg_chunks, dim=0)
+        return self.ff_update(x_pos, x_neg, optimizer)
    
 
 class DistMult(BaseKGE):

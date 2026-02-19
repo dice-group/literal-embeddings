@@ -1,4 +1,6 @@
 import os
+from typing import List
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -409,6 +411,49 @@ class KvsAll(torch.utils.data.Dataset):
         y_vec[self.train_target[idx]] = 1.0
         return self.train_data[idx], y_vec, self.train_target[idx]
 
+
+class FFKvsAllDataset(torch.utils.data.Dataset):
+    """FF-compatible KvsAll dataset.
+
+    Each sample is an (h, r) pair with its set of true tails. The collate
+    function returns:
+    - ``hrs``: (B, 2)
+    - ``y_vec``: (B, num_entities) multi-hot tail targets
+    - ``targets``: list[LongTensor], variable-length true tail indices
+    """
+
+    def __init__(self, train_set_idx: np.ndarray, entity_idxs, seed: int = None):
+        super().__init__()
+        assert len(train_set_idx) > 0
+        assert isinstance(train_set_idx, np.memmap) or isinstance(train_set_idx, np.ndarray)
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+
+        self.target_dim = len(entity_idxs)
+        store = mapping_from_first_two_cols_to_third(train_set_idx)
+        assert len(store) > 0
+        self.train_data = torch.LongTensor(list(store.keys()))
+        # Keep targets as LongTensor list for easy device transfer later.
+        self.train_target = [
+            torch.as_tensor(v, dtype=torch.long) for v in store.values()
+        ]
+
+    def __len__(self):
+        assert len(self.train_data) == len(self.train_target)
+        return len(self.train_data)
+
+    def __getitem__(self, idx):
+        return self.train_data[idx], self.train_target[idx]
+
+    def collate_fn(self, batch):
+        hrs, targets = zip(*batch)
+        hrs = torch.stack(hrs, dim=0).long()
+        y_vec = torch.zeros((len(targets), self.target_dim), dtype=torch.float32)
+        for i, t in enumerate(targets):
+            y_vec[i, t.long()] = 1.0
+        return hrs, y_vec, list(targets)
+
 class NegSampleDataset(torch.utils.data.Dataset):
     def __init__(self, train_set: np.ndarray, num_entities: int, num_relations: int, neg_sample_ratio: int = 1):
         assert isinstance(train_set, np.ndarray)
@@ -444,3 +489,127 @@ class NegSampleDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         # get i-th training sample with positive and negative triple stacked
         return self.train_set[idx], self.labels
+
+
+class TriplePredictionDataset(torch.utils.data.Dataset):
+    """Dataset for triple prediction with on-the-fly negative sampling.
+
+    This variant is adapted for the Forward-Forward pipeline and returns
+    positive and negative triples separately from ``collate_fn``.
+    """
+
+    def __init__(
+        self,
+        train_set: np.ndarray,
+        num_entities: int,
+        num_relations: int,
+        neg_sample_ratio: int = 1,
+        label_smoothing_rate: float = 0.0,
+        seed: int = None,
+        filtered_negatives: bool = True,
+        hard_negative_ratio: float = 0.0,
+        max_filter_retries: int = 10,
+    ):
+        assert isinstance(train_set, np.ndarray)
+        self.label_smoothing_rate = float(label_smoothing_rate)
+        self.neg_sample_ratio = max(int(neg_sample_ratio), 1)
+        self.seed = seed
+        self.filtered_negatives = bool(filtered_negatives)
+        self.hard_negative_ratio = float(min(max(hard_negative_ratio, 0.0), 1.0))
+        self.max_filter_retries = max(int(max_filter_retries), 1)
+
+        if self.seed is not None:
+            torch.manual_seed(self.seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(self.seed)
+            np.random.seed(self.seed)
+
+        # Keep deterministic order independent from input file ordering.
+        sorted_indices = np.lexsort((train_set[:, 2], train_set[:, 1], train_set[:, 0]))
+        self.train_set = train_set[sorted_indices]
+
+        assert num_entities >= max(self.train_set[:, 0]) and num_entities >= max(self.train_set[:, 2]), (
+            f"num_entities: {num_entities}, "
+            f"max(self.train_set[:, 0]): {max(self.train_set[:, 0])}, "
+            f"max(self.train_set[:, 2]): {max(self.train_set[:, 2])}"
+        )
+        self.length = len(self.train_set)
+        self.num_entities = int(num_entities)
+        self.num_relations = int(num_relations)
+
+        triples = self.train_set.astype(np.int64)
+        self.true_triples = {tuple(x) for x in triples.tolist()}
+        rel_to_heads = defaultdict(set)
+        rel_to_tails = defaultdict(set)
+        for h, r, t in triples:
+            rel_to_heads[int(r)].add(int(h))
+            rel_to_tails[int(r)].add(int(t))
+        self.rel_to_heads = {
+            r: np.fromiter(sorted(v), dtype=np.int64) for r, v in rel_to_heads.items()
+        }
+        self.rel_to_tails = {
+            r: np.fromiter(sorted(v), dtype=np.int64) for r, v in rel_to_tails.items()
+        }
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        return torch.from_numpy(self.train_set[idx].copy()).long()
+
+    def _random_entity(self) -> int:
+        return int(torch.randint(0, self.num_entities, (1,), dtype=torch.long).item())
+
+    def _sample_hard_entity(self, rel: int, corrupt_head: bool) -> int:
+        pool = self.rel_to_heads.get(rel) if corrupt_head else self.rel_to_tails.get(rel)
+        if pool is None or len(pool) == 0:
+            return self._random_entity()
+        idx = int(torch.randint(0, len(pool), (1,), dtype=torch.long).item())
+        return int(pool[idx])
+
+    def _sample_entity(self, rel: int, corrupt_head: bool, use_hard: bool) -> int:
+        if use_hard and self.hard_negative_ratio > 0.0:
+            return self._sample_hard_entity(rel, corrupt_head)
+        return self._random_entity()
+
+    def _filter_negative(self, h: int, r: int, t: int, corrupt_head: bool, use_hard: bool):
+        if not self.filtered_negatives:
+            return h, t
+        for _ in range(self.max_filter_retries):
+            if (h, r, t) not in self.true_triples:
+                break
+            sampled = self._sample_entity(r, corrupt_head, use_hard)
+            if corrupt_head:
+                h = sampled
+            else:
+                t = sampled
+        return h, t
+
+    def collate_fn(self, batch: List[torch.Tensor]):
+        pos = torch.stack(batch, dim=0)  # (B, 3)
+        bsz = pos.size(0)
+
+        # Create neg_sample_ratio negatives per positive.
+        neg = pos.repeat_interleave(self.neg_sample_ratio, dim=0).clone()  # (B * r, 3)
+        # Corrupt head or tail per negative sample.
+        n_neg = bsz * self.neg_sample_ratio
+        corrupt_head = (torch.rand(n_neg) >= 0.5).tolist()
+        use_hard = (
+            (torch.rand(n_neg) < self.hard_negative_ratio).tolist()
+            if self.hard_negative_ratio > 0.0
+            else [False] * n_neg
+        )
+        for i in range(n_neg):
+            h = int(neg[i, 0].item())
+            r = int(neg[i, 1].item())
+            t = int(neg[i, 2].item())
+            sampled = self._sample_entity(r, corrupt_head[i], use_hard[i])
+            if corrupt_head[i]:
+                h = sampled
+            else:
+                t = sampled
+            h, t = self._filter_negative(h, r, t, corrupt_head[i], use_hard[i])
+            neg[i, 0] = h
+            neg[i, 2] = t
+
+        return pos, neg
