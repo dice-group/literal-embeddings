@@ -5,6 +5,68 @@ import torch.nn as nn
 import torch.nn.functional as F
 from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
 from dicee.models.base_model import BaseKGE
+try:
+    from cliffordlayers.nn.modules.batchnorm import CliffordBatchNorm1d
+except Exception:  # pragma: no cover
+    CliffordBatchNorm1d = None
+
+
+class MultiVectorAct(nn.Module):
+    """
+    Apply multivector activation with blade-wise gating.
+
+    Args:
+        channels: Number of feature channels.
+        algebra: Algebra object exposing `embed(x, blades)` and `get(x, blades)`.
+        input_blades: Blade indices present in the input.
+        kernel_blades: Blade indices used to compute the gate. Defaults to `input_blades`.
+        agg: Aggregation mode for gate computation: {"linear", "sum", "mean"}.
+    """
+
+    def __init__(self, channels, algebra, input_blades, kernel_blades=None, agg="linear"):
+        super().__init__()
+        self.algebra = algebra
+        self.input_blades = tuple(input_blades)
+        self.kernel_blades = tuple(kernel_blades) if kernel_blades is not None else self.input_blades
+        self.agg = agg
+
+        if self.agg == "linear":
+            self.conv = nn.Conv1d(
+                in_channels=channels,
+                out_channels=channels,
+                kernel_size=len(self.kernel_blades),
+                groups=channels,
+            )
+        elif self.agg not in {"sum", "mean"}:
+            raise ValueError(f"Aggregation {self.agg} not implemented.")
+
+    def forward(self, input):
+        v = self.algebra.embed(input, self.input_blades)
+
+        if self.agg == "linear":
+            gate = torch.sigmoid(self.conv(v[..., self.kernel_blades]))
+        elif self.agg == "sum":
+            gate = torch.sigmoid(v[..., self.kernel_blades].sum(dim=-1, keepdim=True))
+        elif self.agg == "mean":
+            gate = torch.sigmoid(v[..., self.kernel_blades].mean(dim=-1, keepdim=True))
+        else:
+            raise ValueError(f"Aggregation {self.agg} not implemented.")
+
+        v = v * gate
+        v = self.algebra.get(v, self.input_blades)
+        return v
+
+
+class _IdentityBladeAlgebra:
+    """Minimal adapter so MultiVectorAct can operate on already-embedded blade tensors."""
+
+    @staticmethod
+    def embed(x, blades):
+        return x
+
+    @staticmethod
+    def get(x, blades):
+        return x
 
 
 class CLNN_KGE(BaseKGE):
@@ -28,7 +90,17 @@ class CLNN_KGE(BaseKGE):
         # KvsAll scorer (query MLP over [h, r]).
         self.clif_in = CliffordLinear(g=self.g, in_channels=2 * self.C, out_channels=self.C, bias=True)
         self.clif_out = CliffordLinear(g=self.g, in_channels=self.C, out_channels=self.C, bias=True)
-        self.clif_layer_norm = nn.LayerNorm([self.C, self.n_blades])
+        if CliffordBatchNorm1d is not None:
+            self.clif_norm = CliffordBatchNorm1d(
+                g=self.g,
+                channels=self.C,
+                eps=float(args.get("clifford_bn_eps", 1e-5)),
+                momentum=float(args.get("clifford_bn_momentum", 0.1)),
+                affine=True,
+                track_running_stats=True,
+            )
+        else:
+            self.clif_norm = nn.LayerNorm([self.C, self.n_blades])
         self.modrelu_bias = nn.Parameter(torch.zeros(self.C))
 
         # KvsAll attention scorer.
@@ -38,6 +110,12 @@ class CLNN_KGE(BaseKGE):
         self.fuse_proj = CliffordLinear(g=self.g, in_channels=2 * self.C, out_channels=self.C, bias=True)
         self.attn_dropout = nn.Dropout(float(args.get("attn_dropout", 0.1)))
         self.context_gate = nn.Parameter(torch.tensor(0.0))
+        self.mv_act = MultiVectorAct(
+            channels=self.C,
+            algebra=_IdentityBladeAlgebra(),
+            input_blades=tuple(range(self.n_blades)),
+            agg=args.get("mv_act_agg", "linear"),
+        )
 
         # Choose which scorer forward_k_vs_all uses.
         self.use_kvsall_attention = bool(args.get("use_kvsall_attention", False))
@@ -104,8 +182,8 @@ class CLNN_KGE(BaseKGE):
 
         x = torch.cat([h_hc, r_hc], dim=1)     # (B, 2C, I)
         z = self.clif_in(x)                     # (B, C, I)
-        z = self.clif_layer_norm(z)
-        z = self.modrelu(z)
+        z = self.clif_norm(z)
+        z = self.mv_act(z)
         z = self.clif_out(z)                    # (B, C, I)
 
         ent_hc = self.to_hypercomplex(self.entity_embeddings.weight, n_components=self.n_blades)
