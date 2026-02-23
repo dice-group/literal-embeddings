@@ -412,48 +412,6 @@ class KvsAll(torch.utils.data.Dataset):
         return self.train_data[idx], y_vec, self.train_target[idx]
 
 
-class FFKvsAllDataset(torch.utils.data.Dataset):
-    """FF-compatible KvsAll dataset.
-
-    Each sample is an (h, r) pair with its set of true tails. The collate
-    function returns:
-    - ``hrs``: (B, 2)
-    - ``y_vec``: (B, num_entities) multi-hot tail targets
-    - ``targets``: list[LongTensor], variable-length true tail indices
-    """
-
-    def __init__(self, train_set_idx: np.ndarray, entity_idxs, seed: int = None):
-        super().__init__()
-        assert len(train_set_idx) > 0
-        assert isinstance(train_set_idx, np.memmap) or isinstance(train_set_idx, np.ndarray)
-        if seed is not None:
-            torch.manual_seed(seed)
-            np.random.seed(seed)
-
-        self.target_dim = len(entity_idxs)
-        store = mapping_from_first_two_cols_to_third(train_set_idx)
-        assert len(store) > 0
-        self.train_data = torch.LongTensor(list(store.keys()))
-        # Keep targets as LongTensor list for easy device transfer later.
-        self.train_target = [
-            torch.as_tensor(v, dtype=torch.long) for v in store.values()
-        ]
-
-    def __len__(self):
-        assert len(self.train_data) == len(self.train_target)
-        return len(self.train_data)
-
-    def __getitem__(self, idx):
-        return self.train_data[idx], self.train_target[idx]
-
-    def collate_fn(self, batch):
-        hrs, targets = zip(*batch)
-        hrs = torch.stack(hrs, dim=0).long()
-        y_vec = torch.zeros((len(targets), self.target_dim), dtype=torch.float32)
-        for i, t in enumerate(targets):
-            y_vec[i, t.long()] = 1.0
-        return hrs, y_vec, list(targets)
-
 class NegSampleDataset(torch.utils.data.Dataset):
     def __init__(self, train_set: np.ndarray, num_entities: int, num_relations: int, neg_sample_ratio: int = 1):
         assert isinstance(train_set, np.ndarray)
@@ -538,7 +496,11 @@ class TriplePredictionDataset(torch.utils.data.Dataset):
         self.num_relations = int(num_relations)
 
         triples = self.train_set.astype(np.int64)
-        self.true_triples = {tuple(x) for x in triples.tolist()}
+        self._num_entities_u64 = np.uint64(self.num_entities)
+        self._num_relations_u64 = np.uint64(self.num_relations)
+        self.true_triple_ids = np.unique(
+            self._encode_triples_np(triples[:, 0], triples[:, 1], triples[:, 2])
+        )
         rel_to_heads = defaultdict(set)
         rel_to_tails = defaultdict(set)
         for h, r, t in triples:
@@ -557,33 +519,50 @@ class TriplePredictionDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return torch.from_numpy(self.train_set[idx].copy()).long()
 
-    def _random_entity(self) -> int:
-        return int(torch.randint(0, self.num_entities, (1,), dtype=torch.long).item())
+    def _encode_triples_np(self, h: np.ndarray, r: np.ndarray, t: np.ndarray) -> np.ndarray:
+        h_u = h.astype(np.uint64, copy=False)
+        r_u = r.astype(np.uint64, copy=False)
+        t_u = t.astype(np.uint64, copy=False)
+        return ((h_u * self._num_relations_u64 + r_u) * self._num_entities_u64) + t_u
 
-    def _sample_hard_entity(self, rel: int, corrupt_head: bool) -> int:
-        pool = self.rel_to_heads.get(rel) if corrupt_head else self.rel_to_tails.get(rel)
-        if pool is None or len(pool) == 0:
-            return self._random_entity()
-        idx = int(torch.randint(0, len(pool), (1,), dtype=torch.long).item())
-        return int(pool[idx])
+    def _sample_entities_vectorized(
+        self,
+        rel: torch.Tensor,
+        corrupt_head: torch.Tensor,
+        use_hard: torch.Tensor,
+    ) -> torch.Tensor:
+        sampled = torch.randint(
+            0, self.num_entities, (rel.numel(),), dtype=torch.long
+        )
+        if self.hard_negative_ratio <= 0.0 or not bool(use_hard.any().item()):
+            return sampled
 
-    def _sample_entity(self, rel: int, corrupt_head: bool, use_hard: bool) -> int:
-        if use_hard and self.hard_negative_ratio > 0.0:
-            return self._sample_hard_entity(rel, corrupt_head)
-        return self._random_entity()
+        hard_idx = torch.nonzero(use_hard, as_tuple=False).squeeze(1)
+        if hard_idx.numel() == 0:
+            return sampled
 
-    def _filter_negative(self, h: int, r: int, t: int, corrupt_head: bool, use_hard: bool):
-        if not self.filtered_negatives:
-            return h, t
-        for _ in range(self.max_filter_retries):
-            if (h, r, t) not in self.true_triples:
-                break
-            sampled = self._sample_entity(r, corrupt_head, use_hard)
-            if corrupt_head:
-                h = sampled
-            else:
-                t = sampled
-        return h, t
+        for is_head in (True, False):
+            side_mask = corrupt_head[hard_idx] if is_head else ~corrupt_head[hard_idx]
+            idx_side = hard_idx[side_mask]
+            if idx_side.numel() == 0:
+                continue
+
+            rel_vals = rel[idx_side].cpu().numpy()
+            pool_map = self.rel_to_heads if is_head else self.rel_to_tails
+            for rel_id in np.unique(rel_vals):
+                rel_id = int(rel_id)
+                idx_rel = idx_side[rel[idx_side] == rel_id]
+                pool = pool_map.get(rel_id)
+                if pool is None or len(pool) == 0:
+                    sampled[idx_rel] = torch.randint(
+                        0, self.num_entities, (idx_rel.numel(),), dtype=torch.long
+                    )
+                else:
+                    pool_t = torch.from_numpy(pool).long()
+                    rand_idx = torch.randint(0, len(pool), (idx_rel.numel(),), dtype=torch.long)
+                    sampled[idx_rel] = pool_t[rand_idx]
+
+        return sampled
 
     def collate_fn(self, batch: List[torch.Tensor]):
         pos = torch.stack(batch, dim=0)  # (B, 3)
@@ -591,25 +570,42 @@ class TriplePredictionDataset(torch.utils.data.Dataset):
 
         # Create neg_sample_ratio negatives per positive.
         neg = pos.repeat_interleave(self.neg_sample_ratio, dim=0).clone()  # (B * r, 3)
-        # Corrupt head or tail per negative sample.
         n_neg = bsz * self.neg_sample_ratio
-        corrupt_head = (torch.rand(n_neg) >= 0.5).tolist()
+        corrupt_head = torch.rand(n_neg) >= 0.5
         use_hard = (
-            (torch.rand(n_neg) < self.hard_negative_ratio).tolist()
+            torch.rand(n_neg) < self.hard_negative_ratio
             if self.hard_negative_ratio > 0.0
-            else [False] * n_neg
+            else torch.zeros(n_neg, dtype=torch.bool)
         )
-        for i in range(n_neg):
-            h = int(neg[i, 0].item())
-            r = int(neg[i, 1].item())
-            t = int(neg[i, 2].item())
-            sampled = self._sample_entity(r, corrupt_head[i], use_hard[i])
-            if corrupt_head[i]:
-                h = sampled
-            else:
-                t = sampled
-            h, t = self._filter_negative(h, r, t, corrupt_head[i], use_hard[i])
-            neg[i, 0] = h
-            neg[i, 2] = t
+
+        sampled = self._sample_entities_vectorized(
+            rel=neg[:, 1], corrupt_head=corrupt_head, use_hard=use_hard
+        )
+        if bool(corrupt_head.any().item()):
+            neg[corrupt_head, 0] = sampled[corrupt_head]
+        if bool((~corrupt_head).any().item()):
+            neg[~corrupt_head, 2] = sampled[~corrupt_head]
+
+        if self.filtered_negatives:
+            for _ in range(self.max_filter_retries):
+                h_np = neg[:, 0].cpu().numpy()
+                r_np = neg[:, 1].cpu().numpy()
+                t_np = neg[:, 2].cpu().numpy()
+                neg_ids = self._encode_triples_np(h_np, r_np, t_np)
+                colliding = np.isin(neg_ids, self.true_triple_ids, assume_unique=False)
+                if not bool(colliding.any()):
+                    break
+
+                collide_idx = torch.from_numpy(np.flatnonzero(colliding)).long()
+                sampled_retry = self._sample_entities_vectorized(
+                    rel=neg[collide_idx, 1],
+                    corrupt_head=corrupt_head[collide_idx],
+                    use_hard=use_hard[collide_idx],
+                )
+                coll_head = corrupt_head[collide_idx]
+                if bool(coll_head.any().item()):
+                    neg[collide_idx[coll_head], 0] = sampled_retry[coll_head]
+                if bool((~coll_head).any().item()):
+                    neg[collide_idx[~coll_head], 2] = sampled_retry[~coll_head]
 
         return pos, neg

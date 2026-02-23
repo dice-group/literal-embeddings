@@ -1,15 +1,13 @@
-from src.callbacks import ASWA, EpochLevelProgressBar, PeriodicEvalCallback
-from pytorch_lightning.callbacks import EarlyStopping
-from pytorch_lightning.callbacks.stochastic_weight_avg import \
-    StochasticWeightAveraging as SWA
 import torch
 from src.dataset import LiteralDataset, KvsAll, OnevsAllDataset, NegSampleDataset
 from torch.utils.data import DataLoader
-from src.model import LiteralEmbeddingsExt, LiteralEmbeddingsCliffordExt
-from src.clifford import Lit_Keci
 from dicee.static_funcs import  intialize_model
 
 def get_callbacks(args):
+    from src.callbacks import ASWA, EpochLevelProgressBar, PeriodicEvalCallback
+    from pytorch_lightning.callbacks import EarlyStopping
+    from pytorch_lightning.callbacks.stochastic_weight_avg import \
+        StochasticWeightAveraging as SWA
     # Callbacks setup
     callbacks = [EpochLevelProgressBar()]
     # if args.literalE:
@@ -108,6 +106,7 @@ def get_dataloaders(args, entity_dataset):
 
 
 def get_literal_components(args, entity_dataset):
+    from src.model import LiteralEmbeddingsExt, LiteralEmbeddingsCliffordExt
     literal_dataset = LiteralDataset(
             dataset_dir=args.dataset_dir,
             ent_idx=entity_dataset.entity_to_idx,
@@ -138,20 +137,22 @@ def get_literal_components(args, entity_dataset):
 
 
 def get_model(args, entity_dataset = None):
-    if args.model == "Lit_Keci":
-        kge_model = Lit_Keci(args=vars(args), ent2idx=entity_dataset.entity_to_idx, rel2idx=entity_dataset.relation_to_idx)
-    else:
-        kge_model, _ = intialize_model(vars(args), 0)
+    # if args.model == "Lit_Keci":
+    #     pass
+    #     kge_model = Lit_Keci(args=vars(args), ent2idx=entity_dataset.entity_to_idx, rel2idx=entity_dataset.relation_to_idx)
+    # else:
+    kge_model, _ = intialize_model(vars(args), 0)
     return kge_model
 
 
 def get_ff_models(args):
-    from .kge_models import DistMult, CLNN, FFKGE
-    if args.model == "DistMult":
-        return DistMult(vars(args))
-    elif args.model == "CLNN":
+    from .kge_models import CLNN, ComplexKGE
+    from .complex_kge_nobp import ComplexKGENoBP
+    if args.model == "CLNN":
         return CLNN(vars(args))
-    elif args.model == "FFKGE":
-        return FFKGE(vars(args))
+    elif args.model == "ComplexKGE":
+        return ComplexKGE(vars(args))
+    elif args.model == "ComplexKGENoBP":
+        return ComplexKGENoBP(vars(args))
     else:
         raise ValueError(f"Unknown model: {args.model}")

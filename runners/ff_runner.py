@@ -9,24 +9,24 @@ from torch.utils.data import DataLoader
 from dicee.static_funcs import  read_or_load_kg, store, save_checkpoint_model
 from src.static_funcs import  save_kge_experiments, get_full_storage_path
 from src.static_train_utils import   get_ff_models
-from src.dataset import FFKvsAllDataset, NegSampleDataset, TriplePredictionDataset
+from src.dataset import TriplePredictionDataset
 
 def train_kge_ff(args):
     """Train a KGE model with ff-update."""
     # Set up experiment storage path
     args.learning_rate = args.lr
 
-    ff_supported_scoring = {"NegSample", "KvsAll"}
-    assert args.scoring_technique in ff_supported_scoring, (
-        "Forward_forward supports scoring_technique in {'NegSample','KvsAll'}"
+    assert args.scoring_technique == "NegSample", (
+        "Forward-forward training currently supports only scoring_technique='NegSample'."
     )
     args.full_storage_path = get_full_storage_path(args)
     os.makedirs(args.full_storage_path, exist_ok=True)
     print("Training dir", args.full_storage_path)
 
 
-    # Device and seed setup
-    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Device selection: use CUDA when available, otherwise CPU.
+    selected_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    args.device = selected_device
     torch.manual_seed(args.random_seed)
     torch.cuda.manual_seed_all(args.random_seed)
 
@@ -35,39 +35,24 @@ def train_kge_ff(args):
     args.num_entities = entity_dataset.num_entities
     args.num_relations = entity_dataset.num_relations
 
-    # train dataloader
-    if args.scoring_technique == "NegSample":
-        train_dataset = TriplePredictionDataset(
-            neg_sample_ratio=args.neg_ratio,
-            num_entities=args.num_entities,
-            num_relations=args.num_relations,
-            train_set=entity_dataset.train_set,
-            seed=args.random_seed,
-            filtered_negatives=getattr(args, "ff_filtered_negatives", False),
-            hard_negative_ratio=getattr(args, "ff_hard_negative_ratio", 0.0),
-            max_filter_retries=getattr(args, "ff_max_filter_retries", 10),
-        )
-        train_dataloader = DataLoader(
-            train_dataset,
-            batch_size=args.batch_size,
-            shuffle=True,
-            num_workers=args.num_core,
-            collate_fn=train_dataset.collate_fn,
-        )
-    else:
-        train_dataset = FFKvsAllDataset(
-            train_set_idx=entity_dataset.train_set,
-            entity_idxs=entity_dataset.entity_to_idx,
-            seed=args.random_seed,
-        )
-        train_dataloader = DataLoader(
-            train_dataset,
-            batch_size=args.batch_size,
-            shuffle=True,
-            num_workers=args.num_core,
-            collate_fn=train_dataset.collate_fn,
-        )
-    supported_models = ["DistMult", "CLNN", "FFKGE"]
+    train_dataset = TriplePredictionDataset(
+        neg_sample_ratio=args.neg_ratio,
+        num_entities=args.num_entities,
+        num_relations=args.num_relations,
+        train_set=entity_dataset.train_set,
+        seed=args.random_seed,
+        filtered_negatives=getattr(args, "ff_filtered_negatives", False),
+        hard_negative_ratio=getattr(args, "ff_hard_negative_ratio", 0.0),
+        max_filter_retries=getattr(args, "ff_max_filter_retries", 10),
+    )
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_core,
+        collate_fn=train_dataset.collate_fn,
+    )
+    supported_models = ["DistMult", "CLNN", "ComplexKGE", "FFKGE", "ComplexKGENoBP"]
     assert args.model in supported_models , f"{args.model} not supported for forward-forward training"
 
     kge_model = get_ff_models(args)
@@ -96,39 +81,19 @@ def train_kge_ff(args):
         epoch_out_neg = 0.0
         has_components = False
         for batch in train_dataloader:
-            if args.scoring_technique == "NegSample":
-                if isinstance(batch, (tuple, list)) and len(batch) == 2:
-                    x_pos, x_neg = batch
-                    # Backward compatibility for old NegSampleDataset stacked output: (B,2,3)
-                    if x_pos.ndim == 3 and x_pos.size(1) == 2:
-                        stacked = x_pos.to(args.device)
-                        x_pos = stacked[:, 0]
-                        x_neg = stacked[:, 1]
-                    else:
-                        x_pos = x_pos.to(args.device)
-                        x_neg = x_neg.to(args.device)
+            if isinstance(batch, (tuple, list)) and len(batch) == 2:
+                x_pos, x_neg = batch
+                # Backward compatibility for old NegSampleDataset stacked output: (B,2,3)
+                if x_pos.ndim == 3 and x_pos.size(1) == 2:
+                    stacked = x_pos.to(args.device)
+                    x_pos = stacked[:, 0]
+                    x_neg = stacked[:, 1]
                 else:
-                    raise ValueError("Unexpected FF batch format. Expected (x_pos, x_neg).")
-                batch_report = kge_model.ff_update(x_pos, x_neg, optimizer)
+                    x_pos = x_pos.to(args.device)
+                    x_neg = x_neg.to(args.device)
             else:
-                if not (isinstance(batch, (tuple, list)) and len(batch) == 3):
-                    raise ValueError("Unexpected KvsAll FF batch format. Expected (hr, y_vec, targets).")
-                x_hr, y_vec, target_tails = batch
-                x_hr = x_hr.to(args.device)
-                y_vec = y_vec.to(args.device)
-                if not hasattr(kge_model, "ff_update_kvsall"):
-                    raise AttributeError(
-                        f"{args.model} does not implement ff_update_kvsall required for FF+KvsAll."
-                    )
-                batch_report = kge_model.ff_update_kvsall(
-                    x_hr=x_hr,
-                    y_vec=y_vec,
-                    target_tails=target_tails,
-                    optimizer=optimizer,
-                    num_entities=args.num_entities,
-                    num_negatives=getattr(args, "ff_kvsall_num_negatives", 32),
-                    use_all_negatives=getattr(args, "ff_kvsall_use_all_negatives", False),
-                )
+                raise ValueError("Unexpected FF batch format. Expected (x_pos, x_neg).")
+            batch_report = kge_model.ff_update(x_pos, x_neg, optimizer)
             epoch_loss += batch_report["loss"]
             if "hid_pos_loss" in batch_report:
                 has_components = True

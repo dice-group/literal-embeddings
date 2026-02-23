@@ -1,7 +1,58 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .clifford_layer import CliffordLinear
+from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
+
+
+class ComplexLinear(nn.Module):
+    """Complex-valued linear layer."""
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        dtype: torch.dtype = torch.complex64,
+    ):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = nn.Parameter(torch.empty(out_features, in_features, dtype=dtype))
+        if bias:
+            self.bias = nn.Parameter(torch.empty(out_features, dtype=dtype))
+        else:
+            self.bias = None
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        fan_in = self.in_features
+        fan_out = self.out_features
+        bound = (6.0 / max(fan_in + fan_out, 1)) ** 0.5
+        with torch.no_grad():
+            real = torch.empty_like(self.weight.real).uniform_(-bound, bound)
+            imag = torch.empty_like(self.weight.imag).uniform_(-bound, bound)
+            self.weight.copy_(torch.complex(real, imag))
+            if self.bias is not None:
+                b_real = torch.empty_like(self.bias.real).uniform_(-bound, bound)
+                b_imag = torch.empty_like(self.bias.imag).uniform_(-bound, bound)
+                self.bias.copy_(torch.complex(b_real, b_imag))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.linear(x, self.weight, self.bias)
+
+
+class ModReLUComplex(nn.Module):
+    """modReLU activation for complex features."""
+
+    def __init__(self, features: int, eps: float = 1e-8):
+        super().__init__()
+        self.b = nn.Parameter(torch.zeros(features, dtype=torch.float32))
+        self.eps = eps
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        r = torch.abs(z)
+        scale = F.relu(r + self.b) / (r + self.eps)
+        return z * scale
 
 
 class FFLayer(nn.Module):
