@@ -114,6 +114,7 @@ def get_default_arguments(args_list=None):
             "LFMult",
             "DeCaL",
             "CLNN_KGE",
+            "CliffConvKGE",
         ],
         help="Available knowledge graph embedding models. "
         "To use other knowledge graph embedding models available in python, e.g.,"

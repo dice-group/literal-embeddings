@@ -6,7 +6,7 @@ import torch
 from src.dataset import LiteralDataset, KvsAll, OnevsAllDataset
 from torch.utils.data import DataLoader
 from src.model import LiteralEmbeddingsExt, LiteralEmbeddingsCliffordExt
-from src.clifford import CLNN_KGE
+from src.clifford import CLNN_KGE, CliffConvKGE
 from dicee.static_funcs import  intialize_model
 
 def get_callbacks(args):
@@ -134,6 +134,8 @@ def get_model(args, entity_dataset = None):
     kge_model = None
     if args.model == "CLNN_KGE":
             kge_model = CLNN_KGE(args=vars(args), entity2idx=entity_dataset.entity_to_idx)
+    elif args.model == "CliffConvKGE":
+            kge_model = CliffConvKGE(args=vars(args), entity2idx=entity_dataset.entity_to_idx)
     else:
         kge_model, _ = intialize_model(vars(args), 0)
     return kge_model

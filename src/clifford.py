@@ -1,9 +1,11 @@
 import math
+from functools import lru_cache
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
+from cliffordlayers.nn.modules.cliffordconv import CliffordConv1d, CliffordConv2d, CliffordConv3d
 from dicee.models.base_model import BaseKGE
 try:
     from cliffordlayers.nn.modules.batchnorm import CliffordBatchNorm1d
@@ -69,6 +71,100 @@ class _IdentityBladeAlgebra:
         return x
 
 
+@lru_cache(maxsize=32)
+def _clifford_mul_table(g_tuple):
+    """Build multiplication table for basis blades under signature g."""
+    g = list(g_tuple)
+    n = len(g)
+    n_blades = 1 << n
+    idx = torch.zeros((n_blades, n_blades), dtype=torch.long)
+    sign = torch.zeros((n_blades, n_blades), dtype=torch.float32)
+
+    for i in range(n_blades):
+        for j in range(n_blades):
+            s = 1.0
+            for bit in range(n):
+                if (i >> bit) & 1:
+                    # Anti-commutation sign from swaps with lower-index basis vectors in j.
+                    if (((j & ((1 << bit) - 1)).bit_count()) % 2) == 1:
+                        s = -s
+                    # Metric sign for repeated basis vector e_bit * e_bit = g[bit].
+                    if ((j >> bit) & 1) == 1:
+                        s = s * float(g[bit])
+            idx[i, j] = i ^ j
+            sign[i, j] = s
+    return idx, sign
+
+
+def clifford_multiply(a, b, g):
+    """Generic Clifford product for scalars/multivectors under signature g.
+
+    Args:
+        a, b:
+            Scalars or tensors whose last dim is n_blades (= 2**len(g)).
+            Scalars are treated as pure scalar blades.
+        g: Iterable signature, e.g. [-1] (complex-like), [-1, -1] (quaternion-like).
+
+    Returns:
+        Tensor of shape (..., n_blades) if multivector input is used, else scalar tensor.
+    """
+    g = tuple(float(x) for x in g)
+    n_blades = 1 << len(g)
+
+    a_t = torch.as_tensor(a)
+    b_t = torch.as_tensor(b, device=a_t.device)
+    dtype = torch.promote_types(a_t.dtype, b_t.dtype)
+    if not dtype.is_floating_point:
+        dtype = torch.float32
+    a_t = a_t.to(dtype)
+    b_t = b_t.to(dtype)
+
+    a_scalar = a_t.ndim == 0
+    b_scalar = b_t.ndim == 0
+
+    # Lift scalars to pure-scalar multivectors.
+    if a_scalar:
+        a_mv = torch.zeros((n_blades,), dtype=dtype, device=a_t.device)
+        a_mv[0] = a_t
+    else:
+        if a_t.shape[-1] == n_blades:
+            a_mv = a_t
+        elif a_t.shape[-1] == 1:
+            a_mv = torch.zeros((*a_t.shape[:-1], n_blades), dtype=dtype, device=a_t.device)
+            a_mv[..., 0] = a_t[..., 0]
+        else:
+            raise ValueError(f"a last dimension must be 1 or {n_blades}, got {a_t.shape[-1]}")
+
+    if b_scalar:
+        b_mv = torch.zeros((n_blades,), dtype=dtype, device=b_t.device)
+        b_mv[0] = b_t
+    else:
+        if b_t.shape[-1] == n_blades:
+            b_mv = b_t
+        elif b_t.shape[-1] == 1:
+            b_mv = torch.zeros((*b_t.shape[:-1], n_blades), dtype=dtype, device=b_t.device)
+            b_mv[..., 0] = b_t[..., 0]
+        else:
+            raise ValueError(f"b last dimension must be 1 or {n_blades}, got {b_t.shape[-1]}")
+
+    # Broadcast batch dimensions.
+    a_mv, b_mv = torch.broadcast_tensors(a_mv, b_mv)
+    out = torch.zeros_like(a_mv)
+
+    idx, sign = _clifford_mul_table(g)
+    idx = idx.to(device=a_mv.device)
+    sign = sign.to(device=a_mv.device, dtype=dtype)
+
+    for i in range(n_blades):
+        ai = a_mv[..., i].unsqueeze(-1)  # (..., 1)
+        for j in range(n_blades):
+            out[..., idx[i, j]] += sign[i, j] * ai[..., 0] * b_mv[..., j]
+
+    if a_scalar and b_scalar:
+        return out[..., 0]
+    return out
+
+
 class CLNN_KGE(BaseKGE):
     def __init__(self, args, edge_index=None, edge_type=None, entity2idx=None):
         super().__init__(args)
@@ -90,6 +186,8 @@ class CLNN_KGE(BaseKGE):
         # KvsAll scorer (query MLP over [h, r]).
         self.clif_in = CliffordLinear(g=self.g, in_channels=2 * self.C, out_channels=self.C, bias=True)
         self.clif_out = CliffordLinear(g=self.g, in_channels=self.C, out_channels=self.C, bias=True)
+        self.skip_proj = CliffordLinear(g=self.g, in_channels=2 * self.C, out_channels=self.C, bias=True)
+        self.res_gate = nn.Parameter(torch.tensor(0.0))
         if CliffordBatchNorm1d is not None:
             self.clif_norm = CliffordBatchNorm1d(
                 g=self.g,
@@ -142,6 +240,12 @@ class CLNN_KGE(BaseKGE):
             return self._quaternion_mul(a, b)
         raise NotImplementedError(f"Hypercomplex multiplication not implemented for n_blades={n_blades}")
 
+    def clifford_mul(self, a, b, g=None):
+        """Convenience wrapper around generic Clifford multiplication helper."""
+        if g is None:
+            g = self.g
+        return clifford_multiply(a, b, g)
+
     @staticmethod
     def _complex_mul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         a0, a1 = a[..., 0], a[..., 1]
@@ -181,10 +285,13 @@ class CLNN_KGE(BaseKGE):
         r_hc = self.to_hypercomplex(emb_r, n_components=self.n_blades)
 
         x = torch.cat([h_hc, r_hc], dim=1)     # (B, 2C, I)
+        skip = self.skip_proj(x)               # (B, C, I)
         z = self.clif_in(x)                     # (B, C, I)
         z = self.clif_norm(z)
         z = self.mv_act(z)
         z = self.clif_out(z)                    # (B, C, I)
+        gate = torch.sigmoid(self.res_gate)
+        z = z + gate * skip
 
         ent_hc = self.to_hypercomplex(self.entity_embeddings.weight, n_components=self.n_blades)
         scores = torch.einsum("bci,eci->be", z, ent_hc)
@@ -235,3 +342,148 @@ class CLNN_KGE(BaseKGE):
 
     def score(self, h, r, t):
         raise NotImplementedError("score is not implemented in CLNN_KGE.")
+
+
+class CliffConvKGE(BaseKGE):
+    """Generic Clifford-convolution KGE model.
+
+    A single model family that can emulate ConvE/ConvQ/ConvO-like behavior by
+    selecting signature ``g``:
+      - len(g)=1 (2 blades): complex-like
+      - len(g)=2 (4 blades): quaternion-like
+      - len(g)=3 (8 blades): octonion-like
+    """
+
+    def __init__(self, args, edge_index=None, edge_type=None, entity2idx=None):
+        super().__init__(args)
+        self.name = "CliffConvKGE"
+        self.edge_index = edge_index
+        self.edge_type = edge_type
+
+        g_from_args = args.get("clifford_g", None)
+        if g_from_args is not None:
+            self.g = list(g_from_args)
+        else:
+            p = int(args.get("p", 0))
+            q = int(args.get("q", 1))
+            self.g = ([1.0] * p) + ([-1.0] * q)
+
+        self.n_blades = 2 ** len(self.g)
+        self.dim = len(self.g)
+        if self.embedding_dim % self.n_blades != 0:
+            raise ValueError(
+                f"embedding_dim ({self.embedding_dim}) must be divisible by n_blades ({self.n_blades})."
+            )
+        if self.dim not in {1, 2, 3}:
+            raise ValueError(
+                f"CliffConvKGE supports len(g) in {{1,2,3}} for Conv1d/2d/3d, got len(g)={self.dim}."
+            )
+        self.C = self.embedding_dim // self.n_blades
+
+        # Factor C into H*W for 2D/3D conv view.
+        self.h = int(args.get("cliff_conv_h", int(math.sqrt(self.C)) or 1))
+        self.h = max(1, min(self.h, self.C))
+        while self.C % self.h != 0 and self.h > 1:
+            self.h -= 1
+        self.w = self.C // self.h
+
+        self.out_channels = int(args.get("num_of_output_channels", 8))
+        k = int(args.get("kernel_size", 3))
+        self.conv_dropout = nn.Dropout(float(args.get("feature_map_dropout_rate", 0.0)))
+        self.hidden_dropout = nn.Dropout(float(args.get("hidden_dropout_rate", 0.0)))
+
+        # Generic Clifford conv chosen by algebra dimension.
+        if self.dim == 1:
+            self.conv = CliffordConv1d(
+                g=self.g,
+                in_channels=1,
+                out_channels=self.out_channels,
+                kernel_size=k,
+                stride=1,
+                padding=k // 2,
+                bias=True,
+            )
+        elif self.dim == 2:
+            self.conv = CliffordConv2d(
+                g=self.g,
+                in_channels=1,
+                out_channels=self.out_channels,
+                kernel_size=k,
+                stride=1,
+                padding=k // 2,
+                bias=True,
+            )
+        else:
+            self.conv = CliffordConv3d(
+                g=self.g,
+                in_channels=1,
+                out_channels=self.out_channels,
+                kernel_size=k,
+                stride=1,
+                padding=k // 2,
+                bias=True,
+            )
+        self.conv_norm = nn.Identity()
+
+        # Lazy init to avoid manual shape math for post-conv flatten dim.
+        self.post_linear = None
+        self.post_norm = None
+
+    @staticmethod
+    def to_hypercomplex(x: torch.Tensor, n_components: int) -> torch.Tensor:
+        if x.shape[-1] % n_components != 0:
+            raise ValueError(f"Last dimension ({x.shape[-1]}) not divisible by {n_components}")
+        return x.reshape(*x.shape[:-1], n_components, -1).transpose(-2, -1)
+
+    def _ensure_post_layers(self, conv_out: torch.Tensor):
+        if self.post_linear is not None:
+            return
+        in_channels = int(conv_out.shape[1] * math.prod(conv_out.shape[2:-1]))
+        self.post_linear = CliffordLinear(g=self.g, in_channels=in_channels, out_channels=self.C, bias=True).to(
+            conv_out.device
+        )
+        self.post_norm = nn.LayerNorm([self.C, self.n_blades]).to(conv_out.device)
+
+    def _encode_query(self, emb_h: torch.Tensor, emb_r: torch.Tensor) -> torch.Tensor:
+        h_hc = self.to_hypercomplex(emb_h, n_components=self.n_blades)  # (B, C, I)
+        r_hc = self.to_hypercomplex(emb_r, n_components=self.n_blades)  # (B, C, I)
+
+        if self.dim == 1:
+            h_img = h_hc.reshape(h_hc.size(0), self.C, self.n_blades).unsqueeze(1)   # (B,1,C,I)
+            r_img = r_hc.reshape(r_hc.size(0), self.C, self.n_blades).unsqueeze(1)   # (B,1,C,I)
+            x = torch.cat([h_img, r_img], dim=2)                                       # (B,1,2C,I)
+        elif self.dim == 2:
+            h_img = h_hc.reshape(h_hc.size(0), self.h, self.w, self.n_blades).unsqueeze(1)  # (B,1,H,W,I)
+            r_img = r_hc.reshape(r_hc.size(0), self.h, self.w, self.n_blades).unsqueeze(1)  # (B,1,H,W,I)
+            x = torch.cat([h_img, r_img], dim=2)                                                # (B,1,2H,W,I)
+        else:
+            h_img = h_hc.reshape(h_hc.size(0), 1, self.h, self.w, self.n_blades).unsqueeze(1)  # (B,1,1,H,W,I)
+            r_img = r_hc.reshape(r_hc.size(0), 1, self.h, self.w, self.n_blades).unsqueeze(1)  # (B,1,1,H,W,I)
+            x = torch.cat([h_img, r_img], dim=2)                                                 # (B,1,2,H,W,I)
+
+        z5 = self.conv(x)
+        z5 = self.conv_norm(z5)
+        z5 = self.conv_dropout(z5)
+        self._ensure_post_layers(z5)
+        z = z5.reshape(z5.size(0), -1, self.n_blades)  # (B, O*2H*W, I)
+        q = self.post_linear(z)  # (B, C, I)
+        q = self.post_norm(q)
+        q = self.hidden_dropout(q)
+        return q
+
+    def k_vs_all_score(self, emb_h: torch.Tensor, emb_r: torch.Tensor) -> torch.Tensor:
+        q = self._encode_query(emb_h, emb_r)  # (B, C, I)
+        ent_hc = self.to_hypercomplex(self.entity_embeddings.weight, n_components=self.n_blades)  # (E, C, I)
+        return torch.einsum("bci,eci->be", q, ent_hc)
+
+    def forward_k_vs_all(self, x: torch.Tensor) -> torch.Tensor:
+        emb_head, emb_rel = self.get_head_relation_representation(x)
+        return self.k_vs_all_score(emb_h=emb_head, emb_r=emb_rel)
+
+    def forward_k_vs_sample(self, x: torch.LongTensor, target_entity_idx: torch.LongTensor):
+        raise NotImplementedError("forward_k_vs_sample is not implemented in CliffConvKGE.")
+
+    def score(self, h, r, t):
+        q = self._encode_query(h, r)
+        t_hc = self.to_hypercomplex(t, n_components=self.n_blades)
+        return torch.einsum("bci,bci->b", q, t_hc)
