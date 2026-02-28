@@ -447,6 +447,7 @@ def get_full_storage_path(args):
     
     # Extract dataset name from dataset_dir or path_single_kg
     dataset_name = None
+    embedding_dim = args.embedding_dim
     if hasattr(args, 'dataset_dir') and args.dataset_dir:
         dataset_name = os.path.basename(args.dataset_dir.rstrip('/'))
     elif hasattr(args, 'path_single_kg') and args.path_single_kg:

@@ -72,8 +72,8 @@ def get_default_arguments(args_list=None):
     parser.add_argument(
         "--separator",
         type=str,
-        default="\s+",
-        help="Pandas \s+, t for \t polars works with the last two.",
+        default="\\s+",
+        help="Pandas \\s+, t for \\t, polars works with the last two.",
     )
     # Model related arguments
     parser.add_argument(
@@ -215,7 +215,7 @@ def get_default_arguments(args_list=None):
     parser.add_argument(
         "--num_core",
         type=int,
-        default=0,
+        default=1,
         help="Number of cores to be used. 0 implies using single CPU",
     )
     parser.add_argument(

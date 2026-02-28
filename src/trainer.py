@@ -3,6 +3,9 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from src.static_funcs import create_and_save_report
+from src.static_train_utils import (
+    compute_dynamic_lit_weight,
+)
 from pytorch_lightning import LightningModule
 
 
@@ -32,13 +35,9 @@ class KGE_Literal(LightningModule):
         #get batch_data 
         train_X, train_y, train_t = batch
 
-        # Forward through KGE model
-        if self.args.use_literals:
-            yhat_e, lit_loss = self.kge_model.forward_k_vs_all(train_X, train_t)  # (batch_size, num_entities)
-            ent_loss = self.bce_loss_fn(yhat_e, train_y) + 0.01 *lit_loss
-        else:
-            yhat_e = self.kge_model.forward_k_vs_all(train_X)  # (batch_size, num_entities)
-            ent_loss = self.bce_loss_fn(yhat_e, train_y)
+        
+        yhat_e = self.kge_model.forward_k_vs_all(train_X)  # (batch_size, num_entities)
+        ent_loss = self.bce_loss_fn(yhat_e, train_y)
         self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=train_X.size(0))
 
         # Literal model (if active)
@@ -61,13 +60,28 @@ class KGE_Literal(LightningModule):
             lit_loss = F.l1_loss(yhat_lit, y_true)
             self.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=head.size(0))
 
-            # Combined loss
-            scale = torch.log1p(
-                2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
-            ).detach()
-            scale = torch.clamp(scale, min = 1e-9, max= 0.99999)
-            total_loss = (1 - scale) * ent_loss + scale * lit_loss
+            # Combined loss with gradient-norm-based balancing on entity embeddings.
+            lambda_lit = compute_dynamic_lit_weight(
+                kge_model=self.kge_model,
+                device=self.device,
+                ent_loss=ent_loss,
+                lit_loss=lit_loss,
+                entity_ids=entity_ids,
+                target_ratio=float(getattr(self.args, "target_grad_ratio", 1.0)),
+                min_w=float(getattr(self.args, "min_lit_weight", 1e-4)),
+                max_w=float(getattr(self.args, "max_lit_weight", 10.0)),
+                eps=1e-12,
+            )
+            self.log("lambda_lit", lambda_lit, on_step=True, on_epoch=False, prog_bar=False)
+            total_loss = ent_loss + lambda_lit * lit_loss
             return total_loss
+            # Combined loss
+            # scale = torch.log1p(
+            #     2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
+            # ).detach()
+            # scale = torch.clamp(scale, min = 1e-9, max= 0.99999)
+            # total_loss = (1 - scale) * ent_loss + scale * lit_loss
+            # return total_loss
 
         else:
             return ent_loss
