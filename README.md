@@ -15,7 +15,7 @@ cd literal-embeddings
 ```
 Create Conda Environment:
 ```bash
-conda create --name litem  python=3.10 && conda activate litem
+conda create --name litem  python=3.11 && conda activate litem
 ```
 Install Dice embedding Framework
 ```bash

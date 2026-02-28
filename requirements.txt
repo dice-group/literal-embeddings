@@ -1,2 +1,3 @@
-git+https://github.com/dice-group/dice-embeddings.git@de3801e#egg=dicee
+git+https://github.com/dice-group/dice-embeddings.git@2b5f065#egg=dicee
 pre-commit
+cliffordlayers
