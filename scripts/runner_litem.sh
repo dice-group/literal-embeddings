@@ -2,7 +2,7 @@
 
 model="TransE"
 datasets=("FB15k-237" "DB15K" "YAGO15k" "mutagenesis")
-exp_dir="Experiments/KGE_LitEm_all_triples"
+exp_dir="Experiments/KGE_LitEm_all_triple"
 
 for dataset in "${datasets[@]}"; do
   pretrained_path="${exp_dir}/${dataset}-${model}-100"
@@ -36,6 +36,19 @@ for dataset in "${datasets[@]}"; do
 
   echo "=================================================="
   echo "LitEM training completed"
+  echo "=================================================="
+  echo "LitEM training - embeddings- updated"
+  echo "=================================================="
+  python main.py \
+    --model "$model" \
+    --dataset_dir "KGs/$dataset" \
+    --literal_training \
+    --num_literal_runs 5 \
+    --pretrained_kge_path "$pretrained_path" \
+    --no_residual
+
+  echo "=================================================="
+  echo "LitEM-base training completed"
   echo "=================================================="
 
   if [[ "$dataset" == "FB15k-237" || "$dataset" == "YAGO15k" ]]; then

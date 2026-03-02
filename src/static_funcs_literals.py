@@ -76,6 +76,9 @@ def apply_best_config_to_args(args):
 
 def get_full_storage_path_literals(args, dataset_name):
     """Construct the full storage path for literal experiments."""
+    if args.full_storage_path:
+        return args.full_storage_path
+
     if not args.full_storage_path:
         # Generate timestamp for test runs
         if getattr(args, 'test_runs', False):
@@ -130,6 +133,7 @@ def get_litem_model(args, literal_dataset, kge_model, run ):
             freeze_entity_embeddings=freeze_entity_embeddings,
             dropout=getattr(args, 'dropout', 0.3),
             gate_residual=getattr(args, 'gate_residual', True),
+            no_residual=getattr(args, 'no_residual', False),
         )
     else:
         raise ValueError(f"Unknown literal model type: {args.literal_model}. Supported types: 'mlp', 'clifford'")
