@@ -3,9 +3,6 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from src.static_funcs import create_and_save_report
-from src.static_train_utils import (
-    compute_dynamic_lit_weight,
-)
 from pytorch_lightning import LightningModule
 
 
@@ -27,13 +24,64 @@ class KGE_Literal(LightningModule):
     def on_train_start(self):
         """Called when the train begins."""
         self.start_time = datetime.now()
+        if self.literal_dataset is not None:
+            self.literal_dataset.warm_entity_literal_vocab(self.device)
 
     def forward(self, x):
         return self.kge_model(x)
 
-    def training_step(self, batch,  batch_idx):
+    def _entity_embedding_weight(self):
+        entity_embeddings = getattr(self.kge_model, "entity_embeddings", None)
+        if entity_embeddings is None or not hasattr(entity_embeddings, "weight"):
+            return None
+        return entity_embeddings.weight
+
+    def _grad_wrt_entity_weights(self, loss: torch.Tensor, retain_graph: bool = True):
+        ent_weight = self._entity_embedding_weight()
+        if ent_weight is None:
+            return None
+        grad = torch.autograd.grad(
+            outputs=loss,
+            inputs=ent_weight,
+            retain_graph=retain_graph,
+            create_graph=False,
+            allow_unused=True,
+        )[0]
+        return grad
+
+    def _compute_dynamic_lit_weight(
+        self,
+        ent_loss: torch.Tensor,
+        lit_loss: torch.Tensor,
+        entity_ids: torch.Tensor,
+        target_ratio: float = 1.0,
+        min_w: float = 1e-4,
+        max_w: float = 10.0,
+        eps: float = 1e-12,
+    ) -> torch.Tensor:
+        if entity_ids is None or entity_ids.numel() == 0:
+            return torch.tensor(1.0, device=self.device)
+
+        tracked_ids = torch.unique(entity_ids.long()).to(self.device)
+        ent_grad_full = self._grad_wrt_entity_weights(ent_loss, retain_graph=True)
+        lit_grad_full = self._grad_wrt_entity_weights(lit_loss, retain_graph=True)
+        if ent_grad_full is None:
+            return torch.tensor(1.0, device=self.device)
+
+        ent_grad = ent_grad_full.index_select(0, tracked_ids)
+        if lit_grad_full is None:
+            lit_grad = torch.zeros_like(ent_grad)
+        else:
+            lit_grad = lit_grad_full.index_select(0, tracked_ids)
+
+        ent_norm = torch.linalg.vector_norm(ent_grad)
+        lit_norm = torch.linalg.vector_norm(lit_grad)
+        lambda_lit = target_ratio * (ent_norm / (lit_norm + eps))
+        return torch.clamp(lambda_lit, min=min_w, max=max_w).detach()
+
+    def training_step(self, batch, batch_idx):
         #get batch_data 
-        train_X, train_y, train_t = batch
+        train_X, train_y = batch
 
         
         yhat_e = self.kge_model.forward_k_vs_all(train_X)  # (batch_size, num_entities)
@@ -43,27 +91,16 @@ class KGE_Literal(LightningModule):
         # Literal model (if active)
         if self.Literal_model and self.current_epoch > self.args.deferred_literal_training_epochs:
             head = train_X[:, 0].long()
-            tail = train_t.flatten().long()
-            # stacking head and tail together along a new dimension
-            entity_ids = torch.cat([head, tail], dim=0)   # merge into [2 * num_triples]
-            entity_ids = torch.unique(entity_ids)         # deduplicate
+            entity_ids = torch.unique(head)
+            entity_ids = entity_ids.to(self.device)
             lit_entities, lit_properties, y_true = self.literal_dataset.get_batch(entity_ids)
-            lit_entities, lit_properties, y_true = (
-                lit_entities.to(self.device),
-                lit_properties.to(self.device),
-                y_true.to(self.device),
-            )
+            if y_true.numel() == 0:
+                return ent_loss
             ent_embeds = self.kge_model.entity_embeddings(lit_entities)
-            # Ensure embeddings are on the same device as the literal model
-            ent_embeds = ent_embeds.to(self.device)
             yhat_lit = self.Literal_model(ent_embeds, lit_properties)
             lit_loss = F.l1_loss(yhat_lit, y_true)
             self.log("lit_loss", lit_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=head.size(0))
-
-            # Combined loss with gradient-norm-based balancing on entity embeddings.
-            lambda_lit = compute_dynamic_lit_weight(
-                kge_model=self.kge_model,
-                device=self.device,
+            lambda_lit = self._compute_dynamic_lit_weight(
                 ent_loss=ent_loss,
                 lit_loss=lit_loss,
                 entity_ids=entity_ids,
@@ -73,21 +110,13 @@ class KGE_Literal(LightningModule):
                 eps=1e-12,
             )
             self.log("lambda_lit", lambda_lit, on_step=True, on_epoch=False, prog_bar=False)
-            total_loss = ent_loss + lambda_lit * lit_loss
-            return total_loss
-            # Combined loss
-            # scale = torch.log1p(
-            #     2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss))
-            # ).detach()
-            # scale = torch.clamp(scale, min = 1e-9, max= 0.99999)
-            # total_loss = (1 - scale) * ent_loss + scale * lit_loss
-            # return total_loss
+            return ent_loss + lambda_lit * lit_loss
 
         else:
             return ent_loss
 
     def validation_step(self, batch):
-        val_X, val_y, _ = batch
+        val_X, val_y = batch
         yhat_val = self.kge_model(val_X)
         val_loss = self.bce_loss_fn(yhat_val, val_y)
         self.log("ent_loss_val", val_loss, on_step=True, on_epoch=True)

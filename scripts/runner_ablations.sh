@@ -19,7 +19,7 @@ for model in "${models[@]}"; do
       --skip_eval_literals \
       --num_core 20 \
       --embedding_dim 64 \
-      --num_epochs 200
+      --num_epochs 300
 
     echo
   done

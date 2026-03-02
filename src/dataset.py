@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from collections import defaultdict
 from dicee.static_preprocess_funcs import mapping_from_first_two_cols_to_third
 
 class LiteralDataset(Dataset):
@@ -44,6 +43,7 @@ class LiteralDataset(Dataset):
             else {v: i for i, v in ent_idx["entity"].items()}
         )
         self.num_entities = len(self.entity_to_idx)
+        self._entity_literal_cache = {}
 
         self._load_data()
 
@@ -100,6 +100,7 @@ class LiteralDataset(Dataset):
         self.tails_norm = torch.tensor(
             train_df["tail_norm"].values, dtype=torch.float32
         )
+        self._build_entity_literal_vocab()
 
     def _apply_normalization(self, df):
         """Applies normalization to the tail values based on the specified type."""
@@ -161,70 +162,76 @@ class LiteralDataset(Dataset):
 
         return df
 
-    def build_entity_index(self):
+    def _build_entity_literal_vocab(self):
+        if self.triples.numel() == 0:
+            self.entity_literal_ptr = torch.zeros(self.num_entities + 1, dtype=torch.long)
+            self.entity_literal_attr = torch.empty(0, dtype=torch.long)
+            self.entity_literal_value = torch.empty(0, dtype=torch.float32)
+            return
 
-        entity_to_rows = defaultdict(list)
-        triples_cpu = self.triples[:, 0].cpu().numpy()
-        for row_id, ent_id in enumerate(triples_cpu):
-            entity_to_rows[ent_id].append(row_id)
+        sort_order = torch.argsort(self.triples[:, 0])
+        sorted_triples = self.triples.index_select(0, sort_order)
+        self.entity_literal_attr = sorted_triples[:, 1].contiguous()
+        self.entity_literal_value = self.tails_norm.index_select(0, sort_order).contiguous()
 
-        num_entities = max(entity_to_rows.keys()) + 1
-        max_rows = max((len(r) for r in entity_to_rows.values()), default=0)
+        counts = torch.bincount(sorted_triples[:, 0], minlength=self.num_entities)
+        self.entity_literal_ptr = torch.zeros(self.num_entities + 1, dtype=torch.long)
+        self.entity_literal_ptr[1:] = torch.cumsum(counts, dim=0)
 
-        # Fill with -1 padding
-        matrix = np.full((num_entities, max_rows), -1, dtype=np.int64)
-        counts = np.zeros((num_entities,), dtype=np.int64)
-
-        for ent_id, rows in entity_to_rows.items():
-            rows_arr = np.array(rows, dtype=np.int64)
-            matrix[ent_id, : len(rows_arr)] = rows_arr
-            counts[ent_id] = len(rows_arr)
-
-        # Store on the same device as triples for zero-copy access
-        device = self.triples.device
-        self.entity_row_matrix = torch.from_numpy(matrix).to(device)
-        self.entity_row_counts = torch.from_numpy(counts).to(device)
+    def warm_entity_literal_vocab(self, device):
+        cache_key = str(torch.device(device))
+        if cache_key not in self._entity_literal_cache:
+            target_device = torch.device(device)
+            self._entity_literal_cache[cache_key] = {
+                "ptr": self.entity_literal_ptr.to(target_device),
+                "attr": self.entity_literal_attr.to(target_device),
+                "value": self.entity_literal_value.to(target_device),
+            }
+        return self._entity_literal_cache[cache_key]
 
     def get_batch(self, entity_indices):
-        if not hasattr(self, "entity_row_matrix"):
-            self.build_entity_index()
+        target_device = entity_indices.device if isinstance(entity_indices, torch.Tensor) else self.triples.device
+        cache = self.warm_entity_literal_vocab(target_device)
 
-        # Ensure entity_indices is tensor on the same device as entity_row_matrix
-        device = self.entity_row_matrix.device
         if not isinstance(entity_indices, torch.Tensor):
-            entity_idx = torch.as_tensor(entity_indices, dtype=torch.long, device=device)
+            entity_idx = torch.as_tensor(entity_indices, dtype=torch.long, device=target_device)
         else:
-            entity_idx = entity_indices.to(device).long()
+            entity_idx = entity_indices.to(target_device).long()
 
-        max_ent = self.entity_row_matrix.shape[0] - 1
-        valid_mask = (entity_idx >= 0) & (entity_idx <= max_ent)
+        valid_mask = (entity_idx >= 0) & (entity_idx < self.num_entities)
         if not valid_mask.any():
             return (
-                torch.empty(0, dtype=torch.long, device=device),
-                torch.empty(0, dtype=torch.long, device=device),
-                torch.empty(0, dtype=torch.float32, device=device),
+                torch.empty(0, dtype=torch.long, device=target_device),
+                torch.empty(0, dtype=torch.long, device=target_device),
+                torch.empty(0, dtype=torch.float32, device=target_device),
             )
 
-        entity_idx = entity_idx[valid_mask]
-
-        rows_for_batch = self.entity_row_matrix[entity_idx]  # (batch_size, max_rows)
-        valid_rows_mask = rows_for_batch >= 0
-        if not valid_rows_mask.any():
+        entity_idx = torch.unique(entity_idx[valid_mask], sorted=False)
+        starts = cache["ptr"].index_select(0, entity_idx)
+        ends = cache["ptr"].index_select(0, entity_idx + 1)
+        lengths = ends - starts
+        non_empty_mask = lengths > 0
+        if not non_empty_mask.any():
             return (
-                torch.empty(0, dtype=torch.long, device=device),
-                torch.empty(0, dtype=torch.long, device=device),
-                torch.empty(0, dtype=torch.float32, device=device),
+                torch.empty(0, dtype=torch.long, device=target_device),
+                torch.empty(0, dtype=torch.long, device=target_device),
+                torch.empty(0, dtype=torch.float32, device=target_device),
             )
 
-        flat_row_indices = rows_for_batch[valid_rows_mask].long()
+        entity_idx = entity_idx[non_empty_mask]
+        starts = starts[non_empty_mask]
+        lengths = lengths[non_empty_mask]
+        ent_ids = torch.repeat_interleave(entity_idx, lengths)
 
-        selected_triples = self.triples.index_select(0, flat_row_indices)
-        selected_tails_norm = self.tails_norm.index_select(0, flat_row_indices)
+        total = int(lengths.sum().item())
+        batch_offsets = torch.cumsum(lengths, dim=0) - lengths
+        flat_positions = torch.arange(total, device=target_device)
+        flat_starts = torch.repeat_interleave(starts, lengths)
+        flat_offsets = torch.repeat_interleave(batch_offsets, lengths)
+        flat_indices = flat_starts + (flat_positions - flat_offsets)
 
-        ent_ids = selected_triples[:, 0].long()
-        rel_ids = selected_triples[:, 1].long()
-        labels = selected_tails_norm.float()
-
+        rel_ids = cache["attr"].index_select(0, flat_indices)
+        labels = cache["value"].index_select(0, flat_indices)
         return ent_ids, rel_ids, labels
 
 
@@ -338,7 +345,7 @@ class OnevsAllDataset(torch.utils.data.Dataset):
         y_vec = torch.zeros(self.target_dim)
         triple= torch.from_numpy(self.train_data[idx].copy()).long()
         y_vec[triple[2]] = 1
-        return triple[:2], y_vec, triple[2]
+        return triple[:2], y_vec
 
 
 class KvsAll(torch.utils.data.Dataset):
@@ -407,4 +414,4 @@ class KvsAll(torch.utils.data.Dataset):
         # 1. Initialize a vector of output.
         y_vec = torch.zeros(self.target_dim)
         y_vec[self.train_target[idx]] = 1.0
-        return self.train_data[idx], y_vec, self.train_target[idx]
+        return self.train_data[idx], y_vec

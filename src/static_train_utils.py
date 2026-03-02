@@ -35,21 +35,8 @@ def get_callbacks(args):
 
 
 def collate_fn(batch):
-    xs, y_vecs, targets = zip(*batch)  # unzip the triples
-    # 1. Stack xs (assuming tensors of same shape)
-    xs = torch.stack(xs)
-    # 2. Stack one-hot vectors
-    y_vecs = torch.stack(y_vecs)
-    # 3. Flatten variable-length indices into one long tensor
-    #    Convert each target to tensor if it's not already
-    if isinstance(targets, tuple) and isinstance(targets[0], list):
-        targets = [torch.as_tensor(t, dtype=torch.long) for t in targets]
-        targets = torch.cat(targets, dim=0)
-        
-    else:
-        targets = torch.stack(targets)
-
-    return xs, y_vecs, targets
+    xs, y_vecs = zip(*batch)
+    return torch.stack(xs), torch.stack(y_vecs)
 
 def get_dataloaders(args, entity_dataset):
     train_dataloader = None
@@ -71,12 +58,12 @@ def get_dataloaders(args, entity_dataset):
     elif args.scoring_technique == "1vsAll":
         train_dataset = OnevsAllDataset(
             train_set_idx=entity_dataset.train_set,
-            entity_idxs=entity_dataset.entity_to_idx
+            entity_idxs=entity_dataset.entity_to_idx,
         )
         if args.log_validation and not args.train_all_triples:
             valid_dataset = OnevsAllDataset(
                 train_set_idx=entity_dataset.valid_set,
-                entity_idxs=entity_dataset.entity_to_idx
+                entity_idxs=entity_dataset.entity_to_idx,
             )
     else:
         raise ValueError(f"Unknown scoring technique: {args.scoring_technique}. Supported techniques: 'KvsAll', 'OneVsAll'")
@@ -136,61 +123,3 @@ def get_model(args, entity_dataset = None):
     else:
         kge_model, _ = intialize_model(vars(args), 0)
     return kge_model
-
-
-def get_entity_embedding_weight(kge_model):
-    if not hasattr(kge_model, "entity_embeddings"):
-        return None
-    entity_embeddings = kge_model.entity_embeddings
-    if hasattr(entity_embeddings, "weight"):
-        return entity_embeddings.weight
-    return None
-
-
-def grad_wrt_entity_weights(kge_model, loss: torch.Tensor, retain_graph: bool = True):
-    ent_weight = get_entity_embedding_weight(kge_model)
-    if ent_weight is None:
-        return None
-    grad = torch.autograd.grad(
-        outputs=loss,
-        inputs=ent_weight,
-        retain_graph=retain_graph,
-        create_graph=False,
-        allow_unused=True,
-    )[0]
-    return grad
-
-
-def compute_dynamic_lit_weight(
-    kge_model,
-    device,
-    ent_loss,
-    lit_loss,
-    entity_ids,
-    target_ratio: float = 1.0,
-    min_w: float = 1e-4,
-    max_w: float = 10.0,
-    eps: float = 1e-12,
-):
-    """Compute lambda_lit from gradient norms on entity embeddings."""
-    if entity_ids is None or entity_ids.numel() == 0:
-        return torch.tensor(1.0, device=device)
-
-    tracked_ids = torch.unique(entity_ids.long()).to(device)
-    ent_grad_full = grad_wrt_entity_weights(kge_model, ent_loss, retain_graph=True)
-    lit_grad_full = grad_wrt_entity_weights(kge_model, lit_loss, retain_graph=True)
-
-    if ent_grad_full is None:
-        return torch.tensor(1.0, device=device)
-
-    ent_grad = ent_grad_full.index_select(0, tracked_ids)
-    if lit_grad_full is None:
-        lit_grad = torch.zeros_like(ent_grad)
-    else:
-        lit_grad = lit_grad_full.index_select(0, tracked_ids)
-
-    ent_norm = torch.linalg.vector_norm(ent_grad)
-    lit_norm = torch.linalg.vector_norm(lit_grad)
-    lambda_lit = target_ratio * (ent_norm / (lit_norm + eps))
-    lambda_lit = torch.clamp(lambda_lit, min=min_w, max=max_w).detach()
-    return lambda_lit
