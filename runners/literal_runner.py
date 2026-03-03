@@ -1,4 +1,5 @@
 import os
+import shutil
 import torch
 
 from src.trainer_literal import train_literal_model
@@ -7,6 +8,14 @@ from src.static_funcs import evaluate_lit_preds, load_model_components
 from src.static_funcs_literals import apply_best_config_to_args, get_full_storage_path_literals
 from src.static_funcs_literals import reset_random_seeds, clear_cuda_cache
 from src.static_funcs_literals import  get_literal_datasets, get_litem_model, save_literal_experiments
+
+
+def prepare_experiment_dir(path):
+    if os.path.isdir(path) and os.listdir(path):
+        print(f"Removing existing experiment directory: {path}")
+        shutil.rmtree(path)
+
+    os.makedirs(path, exist_ok=True)
 
 def train_literals(args):
     """Train literal embeddings using a pre-trained KGE model."""
@@ -36,6 +45,7 @@ def train_literals(args):
     print(f"Using literal model type: {args.literal_model}")
 
     args.full_storage_path = get_full_storage_path_literals(args,dataset_name)
+    prepare_experiment_dir(args.full_storage_path)
     literal_dataset, literal_dataloader = get_literal_datasets(args, e2idx)
 
     lit_results = []

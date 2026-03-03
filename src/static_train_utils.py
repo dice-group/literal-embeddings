@@ -123,3 +123,65 @@ def get_model(args, entity_dataset = None):
     else:
         kge_model, _ = intialize_model(vars(args), 0)
     return kge_model
+
+
+def get_entity_embedding_weight(kge_model):
+    if not hasattr(kge_model, "entity_embeddings"):
+        return None
+    entity_embeddings = kge_model.entity_embeddings
+    if hasattr(entity_embeddings, "weight"):
+        return entity_embeddings.weight
+    return None
+
+
+def grad_wrt_entity_weights(kge_model, loss: torch.Tensor, retain_graph: bool = True):
+    ent_weight = get_entity_embedding_weight(kge_model)
+    if ent_weight is None:
+        return None
+    grad = torch.autograd.grad(
+        outputs=loss,
+        inputs=ent_weight,
+        retain_graph=retain_graph,
+        create_graph=False,
+        allow_unused=True,
+    )[0]
+    return grad
+
+
+def compute_literal_loss_mix(
+    kge_model,
+    device,
+    ent_loss,
+    lit_loss,
+    base_mix: float = 0.5,
+    target_ratio: float = 1.0,
+    min_mix: float = 0.0,
+    eps: float = 1e-12,
+):
+    """Compute an effective literal mix from shared entity-embedding gradient norms.
+
+    This implements the archived convex-style formulation:
+        s_eff = min(s, tau * g_ent / (g_lit + eps))
+
+    Falls back to the static base mix if no usable shared gradients are available,
+    e.g. when entity embeddings are detached for the literal branch.
+    """
+    ent_grad_full = grad_wrt_entity_weights(kge_model, ent_loss, retain_graph=True)
+    lit_grad_full = grad_wrt_entity_weights(kge_model, lit_loss, retain_graph=True)
+
+    fallback_mix = torch.tensor(base_mix, device=device)
+    if ent_grad_full is None or lit_grad_full is None:
+        return fallback_mix, False
+
+    ent_norm = torch.linalg.vector_norm(ent_grad_full)
+    lit_norm = torch.linalg.vector_norm(lit_grad_full)
+    if not torch.isfinite(ent_norm) or not torch.isfinite(lit_norm) or lit_norm <= eps:
+        return fallback_mix, False
+
+    proposed_mix = target_ratio * (ent_norm / (lit_norm + eps))
+    effective_mix = torch.minimum(
+        torch.tensor(base_mix, device=device),
+        proposed_mix,
+    )
+    effective_mix = torch.clamp(effective_mix, min=min_mix).detach()
+    return effective_mix, True

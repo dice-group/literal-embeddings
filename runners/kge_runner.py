@@ -1,5 +1,6 @@
 ### KGE Training Runner
 import os
+import shutil
 import torch
 
 from dicee.evaluator import Evaluator
@@ -11,12 +12,20 @@ from src.trainer import KGE_Literal
 from src.static_funcs import evaluate_lit_preds, save_kge_experiments, get_full_storage_path
 from src.static_train_utils import get_callbacks, get_dataloaders, get_literal_components, get_model
 
+
+def prepare_experiment_dir(path):
+    if os.path.isdir(path) and os.listdir(path):
+        print(f"Removing existing experiment directory: {path}")
+        shutil.rmtree(path)
+
+    os.makedirs(path, exist_ok=True)
+
 def train_kge_model(args):
     """Train a KGE model with optional literal embeddings."""
     # Set up experiment storage path
     args.learning_rate = args.lr
     args.full_storage_path = get_full_storage_path(args)
-    os.makedirs(args.full_storage_path, exist_ok=True)
+    prepare_experiment_dir(args.full_storage_path)
     print("Training dir", args.full_storage_path)
 
     # Device and seed setup
