@@ -7,8 +7,6 @@ from tqdm import tqdm
 import os
 import json
 from collections import defaultdict
-from src.dataset import LiteralDataset
-from src.model import LiteralEmbeddings
 from dicee.static_funcs import save_checkpoint_model
 
 

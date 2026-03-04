@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -48,3 +50,58 @@ def train_literal_model(args, kge_model,
         loss_log["lit_loss"].append(avg_epoch_loss)
 
     return literal_model, loss_log
+
+
+def train_literal_model_with_periodic_snapshots(
+    args,
+    kge_model,
+    literal_model=None,
+    literal_batch_loader=None,
+    eval_every_n_epochs=20,
+):
+    """
+    Train the literal model once and capture model snapshots at regular epoch intervals.
+
+    Returns:
+    - literal_model: Final trained model
+    - loss_log: Epoch-wise loss log
+    - snapshots: List of dictionaries with `epoch`, `state_dict`, and `lit_loss`
+    """
+
+    device = getattr(args, "device", torch.device("cpu"))
+    literal_model = literal_model.to(device)
+    kge_model = kge_model.to(device)
+    kge_model.eval()
+
+    loss_log = {"lit_loss": []}
+    snapshots = []
+    optimizer = optim.Adam(literal_model.parameters(), lr=args.lit_lr)
+
+    for epoch in (tqdm_bar := tqdm(range(args.lit_epochs))):
+        epoch_loss = 0.0
+        for batch_x, batch_y in literal_batch_loader:
+            optimizer.zero_grad()
+            lit_entities = batch_x[:, 0].long().to(device)
+            lit_properties = batch_x[:, 1].long().to(device)
+            batch_y = batch_y.to(device)
+            yhat = literal_model(lit_entities, lit_properties)
+            lit_loss = F.l1_loss(yhat, batch_y)
+            lit_loss.backward()
+            optimizer.step()
+            epoch_loss += lit_loss.item()
+
+        avg_epoch_loss = epoch_loss / len(literal_batch_loader)
+        current_epoch = epoch + 1
+        tqdm_bar.set_postfix_str(f"loss_lit={avg_epoch_loss:.5f}")
+        loss_log["lit_loss"].append(avg_epoch_loss)
+
+        if current_epoch % eval_every_n_epochs == 0 or current_epoch == args.lit_epochs:
+            snapshots.append(
+                {
+                    "epoch": current_epoch,
+                    "lit_loss": avg_epoch_loss,
+                    "state_dict": copy.deepcopy(literal_model.state_dict()),
+                }
+            )
+
+    return literal_model, loss_log, snapshots

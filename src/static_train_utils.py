@@ -3,10 +3,8 @@ from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.stochastic_weight_avg import \
     StochasticWeightAveraging as SWA
 import torch
-from src.dataset import LiteralDataset, KvsAll, OnevsAllDataset
+from src.dataset import KvsAll, OnevsAllDataset
 from torch.utils.data import DataLoader
-from src.model import LiteralEmbeddingsExt, LiteralEmbeddingsCliffordExt
-from src.clifford import Lit_Keci
 from dicee.static_funcs import  intialize_model
 
 def get_callbacks(args):
@@ -85,15 +83,12 @@ def get_dataloaders(args, entity_dataset):
 
 
     return train_dataloader, valid_dataloader
+def get_literal_components(args, entity_dataset, literal_dataset=None):
+    if literal_dataset is None:
+        from src.literale import get_literal_dataset
+        literal_dataset = get_literal_dataset(args, entity_dataset)
 
-
-def get_literal_components(args, entity_dataset):
-    literal_dataset = LiteralDataset(
-            dataset_dir=args.dataset_dir,
-            ent_idx=entity_dataset.entity_to_idx,
-            normalization=args.lit_norm,
-        )
-    args.num_attributes = literal_dataset.num_data_properties
+    from src.model import LiteralEmbeddingsCliffordExt, LiteralEmbeddingsExt
         
     # Use external embedding model that takes embeddings as input
     if args.literal_model == "clifford":
@@ -119,6 +114,7 @@ def get_literal_components(args, entity_dataset):
 
 def get_model(args, entity_dataset = None):
     if args.model == "Lit_Keci":
+        from src.clifford import Lit_Keci
         kge_model = Lit_Keci(args=vars(args), ent2idx=entity_dataset.entity_to_idx, rel2idx=entity_dataset.relation_to_idx)
     else:
         kge_model, _ = intialize_model(vars(args), 0)

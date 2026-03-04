@@ -1,22 +1,26 @@
 {
   "FB15k-237": {
-    "batch_size": 1024,
-    "lit_epochs": 200,
+    "batch_size": 256,
+    "dropout": 0.15,
+    "lit_epochs": 260,
     "lit_lr": 0.001
   },
   "YAGO15k": {
-    "batch_size": 512,
-    "lit_epochs": 200,
+    "batch_size": 256,
+    "dropout": 0.3,
+    "lit_epochs": 40,
     "lit_lr": 0.001
   },
   "DB15K": {
-    "batch_size": 512,
-    "lit_epochs": 200,
-    "lit_lr": 0.05
+    "batch_size": 256,
+    "dropout": 0.1,
+    "lit_epochs": 240,
+    "lit_lr": 0.001
   },
   "mutagenesis": {
     "batch_size": 256,
-    "lit_epochs": 200,
+    "dropout": 0.1,
+    "lit_epochs": 280,
     "lit_lr": 0.001
   }
 }

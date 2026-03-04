@@ -28,6 +28,20 @@ class KGE_Literal(LightningModule):
         if self.literal_dataset is not None:
             self.literal_dataset.warm_entity_literal_vocab(self.device)
 
+    def on_train_batch_start(self, batch, batch_idx):
+        entity_embeddings = getattr(self.kge_model, "entity_embeddings", None)
+        if entity_embeddings is None or not hasattr(entity_embeddings, "prepare_batch"):
+            return
+        train_X, _ = batch
+        head_ids = torch.unique(train_X[:, 0].long()).to(self.device)
+        entity_embeddings.prepare_batch(head_ids)
+
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        del outputs, batch, batch_idx
+        entity_embeddings = getattr(self.kge_model, "entity_embeddings", None)
+        if entity_embeddings is not None and hasattr(entity_embeddings, "clear_batch_cache"):
+            entity_embeddings.clear_batch_cache()
+
     def forward(self, x):
         return self.kge_model(x)
 

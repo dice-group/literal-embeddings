@@ -69,6 +69,10 @@ def apply_best_config_to_args(args):
         if hasattr(args, 'lit_lr') and 'lit_lr' in config:
             args.lit_lr = config['lit_lr']
             print(f"  Set lit_lr: {args.lit_lr}")
+
+        if hasattr(args, 'dropout') and 'dropout' in config:
+            args.dropout = config['dropout']
+            print(f"  Set dropout: {args.dropout}")
     else:
         print(f"No configuration found for dataset: {dataset_name}. Using default parameters.")
     

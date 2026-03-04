@@ -471,6 +471,16 @@ def get_full_storage_path(args):
 
         model_name = getattr(args, 'model', 'unknown_model')
         return f"{base_path}/{model_name}_{embedding_dim}"
+    elif getattr(args, 'literalE', False):
+        base_path = f"Experiments/KGE_LiteralE/{dataset_name}"
+        model_name = getattr(args, 'model', 'unknown_model')
+        embedding_dim = getattr(args, 'embedding_dim', 'unknown_dim')
+        return f"{base_path}/{model_name}_{embedding_dim}"
+    elif getattr(args, 'kbln', False):
+        base_path = f"Experiments/KGE_KBLN/{dataset_name}"
+        model_name = getattr(args, 'model', 'unknown_model')
+        embedding_dim = getattr(args, 'embedding_dim', 'unknown_dim')
+        return f"{base_path}/{model_name}_{embedding_dim}"
 
     
     else:

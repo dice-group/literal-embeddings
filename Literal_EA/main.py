@@ -7,8 +7,23 @@ from config import parse_args
 from callbacks import ASWA, PeriodicEvalCallback
 from litem import LiteralEmbeddings
 
-# Set float32 matmul precision for better performance
-torch.set_float32_matmul_precision('medium')
+def configure_fp32_precision():
+    """Prefer the new TF32 configuration API and keep compatibility with older PyTorch."""
+    cuda_backends = getattr(torch.backends, "cuda", None)
+    cudnn_backends = getattr(torch.backends, "cudnn", None)
+    has_new_matmul_api = hasattr(cuda_backends, "matmul") and hasattr(cuda_backends.matmul, "fp32_precision")
+    has_new_cudnn_api = hasattr(cudnn_backends, "conv") and hasattr(cudnn_backends.conv, "fp32_precision")
+
+    if has_new_matmul_api:
+        torch.backends.cuda.matmul.fp32_precision = "tf32"
+    if has_new_cudnn_api:
+        torch.backends.cudnn.conv.fp32_precision = "tf32"
+
+    if not (has_new_matmul_api or has_new_cudnn_api):
+        torch.set_float32_matmul_precision("medium")
+
+
+configure_fp32_precision()
 
 from dataset import KGDataset , LiteralDataset
 from model import *

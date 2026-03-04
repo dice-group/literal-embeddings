@@ -243,6 +243,17 @@ class LiteralDataset(Dataset):
         a = self.triples[:, 1]
         ea[e, a] = 1.0
         return ea
+
+    def get_literal_value_tensor(self):
+        values = torch.zeros(
+            self.num_entities, self.num_data_properties, dtype=torch.float32
+        )
+        if self.triples.numel() == 0:
+            return values
+        e = self.triples[:, 0]
+        a = self.triples[:, 1]
+        values[e, a] = self.tails_norm
+        return values
     
     def get_available_attributes(self):
         """Get list of all available attributes in the training data"""

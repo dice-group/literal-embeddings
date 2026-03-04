@@ -4,23 +4,32 @@ models=("DistMult" "Keci" "ComplEx" "OMult" "QMult" "DeCaL" "DualE" )
 datasets=("Synthetic" "Synthetic_random")
 for model in "${models[@]}"; do
   for dataset in "${datasets[@]}"; do
-    storage_path="Experiments/Ablations/${dataset}/${model}"
+    for mode in "combined" "literalE" "kbln"; do
+      storage_path="Experiments/Ablations/${dataset}/${model}/${mode}"
 
-    echo "=================================="
-    echo "Model: $model | Dataset: $dataset"
-    echo "Storage Path: $storage_path"
-    echo "=================================="
+      echo "=================================="
+      echo "Model: $model | Dataset: $dataset | Mode: $mode"
+      echo "Storage Path: $storage_path"
+      echo "=================================="
 
-    python main.py \
-      --dataset_dir "KGs/$dataset" \
-      --model "$model" \
-      --combined_training \
-      --full_storage_path "$storage_path" \
-      --skip_eval_literals \
-      --num_core 20 \
-      --embedding_dim 64 \
-      --num_epochs 300
+      common_args=(
+        --dataset_dir "KGs/$dataset"
+        --model "$model"
+        --full_storage_path "$storage_path"
+        --num_core 20
+        --embedding_dim 64
+        --num_epochs 300
+      )
 
-    echo
+      if [ "$mode" == "combined" ]; then
+        python main.py "${common_args[@]}" --combined_training --skip_eval_literals
+      elif [ "$mode" == "literalE" ]; then
+        python main.py "${common_args[@]}" --literalE
+      else
+        python main.py "${common_args[@]}" --kbln
+      fi
+
+      echo
+    done
   done
 done

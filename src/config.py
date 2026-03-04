@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 
 
 def get_default_arguments(args_list=None):
@@ -144,6 +145,7 @@ def get_default_arguments(args_list=None):
     parser.add_argument("--lr", type=float, default=0.05)
     parser.add_argument("--lit_lr", type=float, default=0.001)
     parser.add_argument("--lit_epochs", type=int, default=200)
+    parser.add_argument("--dropout", type=float, default=0.15)
     parser.add_argument(
         "--callbacks",
         type=json.loads,
@@ -318,6 +320,18 @@ def get_default_arguments(args_list=None):
         help="Combined Training of KGE and Literal Embedding Model",
     )
     parser.add_argument(
+        "--literalE",
+        action="store_true",
+        default=False,
+        help="Fuse normalized numerical literals into entity embeddings during KGE training.",
+    )
+    parser.add_argument(
+        "--kbln",
+        action="store_true",
+        default=False,
+        help="Add a KBLN-style numerical literal score term during KGE training.",
+    )
+    parser.add_argument(
         "--literal_training",
         action="store_true",
         default=False,
@@ -448,4 +462,11 @@ def get_default_arguments(args_list=None):
     parser.add_argument("--use_best_config", action='store_true', default=False,
                         help='Use the best configuration found during hyperparameter search.')
 
-    return parser.parse_args(args_list)
+    parsed_args = parser.parse_args(args_list)
+    if parsed_args.path_single_kg:
+        inferred_dataset_dir = os.path.dirname(parsed_args.path_single_kg.rstrip("/"))
+        parsed_args.dataset_dir = inferred_dataset_dir or "."
+    active_literal_modes = [parsed_args.literalE, parsed_args.kbln, parsed_args.combined_training]
+    if sum(bool(mode) for mode in active_literal_modes) > 1:
+        parser.error("`--literalE`, `--kbln`, and `--combined_training` are mutually exclusive.")
+    return parsed_args

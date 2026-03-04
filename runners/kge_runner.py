@@ -8,9 +8,16 @@ from dicee.knowledge_graph import KG
 from dicee.static_funcs import  read_or_load_kg, store
 
 from src.abstracts import KGETrainer
+from src.kbln import attach_kbln_model
+from src.literale import attach_literale_embeddings, get_literal_dataset
 from src.trainer import KGE_Literal
 from src.static_funcs import evaluate_lit_preds, save_kge_experiments, get_full_storage_path
-from src.static_train_utils import get_callbacks, get_dataloaders, get_literal_components, get_model
+from src.static_train_utils import (
+    get_callbacks,
+    get_dataloaders,
+    get_literal_components,
+    get_model,
+)
 
 
 def prepare_experiment_dir(path):
@@ -22,6 +29,9 @@ def prepare_experiment_dir(path):
 
 def train_kge_model(args):
     """Train a KGE model with optional literal embeddings."""
+    if sum(bool(mode) for mode in (args.literalE, args.kbln, args.combined_training)) > 1:
+        raise ValueError("`literalE`, `kbln`, and `combined_training` are mutually exclusive.")
+
     # Set up experiment storage path
     args.learning_rate = args.lr
     args.full_storage_path = get_full_storage_path(args)
@@ -43,8 +53,13 @@ def train_kge_model(args):
     kge_model = get_model(args = args, entity_dataset=entity_dataset)
     literal_dataset, Literal_model = None, None
 
-    # Combined training and literal model setup
-    if args.combined_training:
+    if args.literalE:
+        literal_dataset = get_literal_dataset(args, entity_dataset)
+        kge_model = attach_literale_embeddings(kge_model, literal_dataset)
+    elif args.kbln:
+        literal_dataset = get_literal_dataset(args, entity_dataset)
+        kge_model, literal_dataset = attach_kbln_model(args, kge_model, entity_dataset, literal_dataset=literal_dataset)
+    elif args.combined_training:
         literal_dataset, Literal_model = get_literal_components(args, entity_dataset)
 
     # Evaluator and Lightning module
