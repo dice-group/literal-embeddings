@@ -4,6 +4,8 @@ from pytorch_lightning.callbacks.stochastic_weight_avg import \
     StochasticWeightAveraging as SWA
 import torch
 from src.dataset import KvsAll, OnevsAllDataset
+from src.dataset import LiteralDataset
+from src.model_resolver import resolve_mode_model_class
 from torch.utils.data import DataLoader
 from dicee.static_funcs import  intialize_model
 
@@ -83,9 +85,20 @@ def get_dataloaders(args, entity_dataset):
 
 
     return train_dataloader, valid_dataloader
+
+
+def get_literal_dataset(args, entity_dataset):
+    literal_dataset = LiteralDataset(
+        dataset_dir=args.dataset_dir,
+        ent_idx=entity_dataset.entity_to_idx,
+        normalization="min-max",
+    )
+    args.num_attributes = literal_dataset.num_data_properties
+    return literal_dataset
+
+
 def get_literal_components(args, entity_dataset, literal_dataset=None):
     if literal_dataset is None:
-        from src.literale import get_literal_dataset
         literal_dataset = get_literal_dataset(args, entity_dataset)
 
     from src.model import LiteralEmbeddingsCliffordExt, LiteralEmbeddingsExt
@@ -96,16 +109,18 @@ def get_literal_components(args, entity_dataset, literal_dataset=None):
             num_of_data_properties=literal_dataset.num_data_properties,
             embedding_dims=args.embedding_dim,
             dropout=getattr(args, 'dropout', 0.15),
-            gate_residual=getattr(args, 'gate_residual', False),
+            gate_residual=getattr(args, 'gate_residual', True),
             freeze_entity_embeddings=args.freeze_entity_embeddings_combined,
+            no_residual=getattr(args, 'no_residual', False),
         )
     elif args.literal_model == "mlp":
         Literal_model = LiteralEmbeddingsExt(
             num_of_data_properties=literal_dataset.num_data_properties,
             embedding_dims=args.embedding_dim,
             dropout=getattr(args, 'dropout', 0.3),
-            gate_residual=False,
+            gate_residual=getattr(args, 'gate_residual', True),
             freeze_entity_embeddings=args.freeze_entity_embeddings_combined,
+            no_residual=getattr(args, 'no_residual', False),
         )
     else:
         raise ValueError(f"Unknown literal model: {args.literal_model}. Supported models: 'clifford', 'mlp'")
@@ -113,9 +128,20 @@ def get_literal_components(args, entity_dataset, literal_dataset=None):
 
 
 def get_model(args, entity_dataset = None):
-    if args.model == "Lit_Keci":
-        from src.clifford import Lit_Keci
-        kge_model = Lit_Keci(args=vars(args), ent2idx=entity_dataset.entity_to_idx, rel2idx=entity_dataset.relation_to_idx)
+    if getattr(args, "literalE", False):
+        model_cls = resolve_mode_model_class(args.model, mode="literalE")
+        kge_model = model_cls(
+            args=vars(args),
+            ent2idx=entity_dataset.entity_to_idx,
+            rel2idx=entity_dataset.relation_to_idx,
+        )
+    elif getattr(args, "kbln", False):
+        model_cls = resolve_mode_model_class(args.model, mode="kbln")
+        kge_model = model_cls(
+            args=vars(args),
+            ent2idx=entity_dataset.entity_to_idx,
+            rel2idx=entity_dataset.relation_to_idx,
+        )
     else:
         kge_model, _ = intialize_model(vars(args), 0)
     return kge_model
@@ -150,14 +176,12 @@ def compute_literal_loss_mix(
     ent_loss,
     lit_loss,
     base_mix: float = 0.5,
-    target_ratio: float = 1.0,
-    min_mix: float = 0.0,
     eps: float = 1e-12,
 ):
     """Compute an effective literal mix from shared entity-embedding gradient norms.
 
     This implements the archived convex-style formulation:
-        s_eff = min(s, tau * g_ent / (g_lit + eps))
+        s_eff = min(s, g_ent / (g_lit + eps))
 
     Falls back to the static base mix if no usable shared gradients are available,
     e.g. when entity embeddings are detached for the literal branch.
@@ -174,10 +198,32 @@ def compute_literal_loss_mix(
     if not torch.isfinite(ent_norm) or not torch.isfinite(lit_norm) or lit_norm <= eps:
         return fallback_mix, False
 
-    proposed_mix = target_ratio * (ent_norm / (lit_norm + eps))
+    proposed_mix = ent_norm / (lit_norm + eps)
     effective_mix = torch.minimum(
         torch.tensor(base_mix, device=device),
         proposed_mix,
     )
-    effective_mix = torch.clamp(effective_mix, min=min_mix).detach()
-    return effective_mix, True
+    return effective_mix.detach(), True
+
+
+def compute_weighted_harmonic_loss(
+    ent_loss: torch.Tensor,
+    lit_loss: torch.Tensor,
+    eps: float = 1e-12,
+):
+    scale = torch.log1p(
+        2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss + eps))
+    ).detach()
+    scale = torch.clamp(scale, min=1e-9, max=0.99999)
+    return (1.0 - scale) * ent_loss + scale * lit_loss
+
+
+def compute_harmonic_scale(
+    ent_loss: torch.Tensor,
+    lit_loss: torch.Tensor,
+    eps: float = 1e-12,
+):
+    scale = torch.log1p(
+        2 * ((ent_loss * lit_loss) / (ent_loss + lit_loss + eps))
+    ).detach()
+    return torch.clamp(scale, min=1e-9, max=0.99999)

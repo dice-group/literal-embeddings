@@ -8,14 +8,13 @@ from dicee.knowledge_graph import KG
 from dicee.static_funcs import  read_or_load_kg, store
 
 from src.abstracts import KGETrainer
-from src.kbln import attach_kbln_model
-from src.literale import attach_literale_embeddings, get_literal_dataset
-from src.trainer import KGE_Literal
+from src.trainer import KGECombinedTrainer, KGEEntityTrainer
 from src.static_funcs import evaluate_lit_preds, save_kge_experiments, get_full_storage_path
 from src.static_train_utils import (
     get_callbacks,
     get_dataloaders,
     get_literal_components,
+    get_literal_dataset,
     get_model,
 )
 
@@ -55,18 +54,26 @@ def train_kge_model(args):
 
     if args.literalE:
         literal_dataset = get_literal_dataset(args, entity_dataset)
-        kge_model = attach_literale_embeddings(kge_model, literal_dataset)
     elif args.kbln:
         literal_dataset = get_literal_dataset(args, entity_dataset)
-        kge_model, literal_dataset = attach_kbln_model(args, kge_model, entity_dataset, literal_dataset=literal_dataset)
     elif args.combined_training:
         literal_dataset, Literal_model = get_literal_components(args, entity_dataset)
 
     # Evaluator and Lightning module
     evaluator = Evaluator(args=args)
-    lightning_module = KGE_Literal(
-        kge_model, Literal_model, args, literal_dataset
-    )
+    if args.combined_training:
+        lightning_module = KGECombinedTrainer(
+            kge_model=kge_model,
+            literal_model=Literal_model,
+            args=args,
+            literal_dataset=literal_dataset,
+        )
+    else:
+        lightning_module = KGEEntityTrainer(
+            kge_model=kge_model,
+            args=args,
+            literal_dataset=literal_dataset,
+        )
 
     # set validation epochs
     check_val_epochs = 1 if args.log_validation and valid_dataloader else None
@@ -77,6 +84,7 @@ def train_kge_model(args):
         accelerator="auto",
         devices=1,
         callbacks=get_callbacks(args),
+        logger=False,
         check_val_every_n_epoch=check_val_epochs,
         log_every_n_steps=1,
         enable_checkpointing=False,
@@ -104,6 +112,12 @@ def train_kge_model(args):
             save_kge_experiments(args=args, loss_log={}, lit_results=lit_results, attr_to_idx=literal_dataset.data_property_to_idx)
         else:
             save_kge_experiments(args=args, loss_log={})
-        print( f"Experiment for {args.model} + {args.embedding_dim} (combined={args.combined_training})"
-               f"completed and stored at {args.full_storage_path}"
-        )
+        if args.combined_training:
+            mode_tag = "KGE + LitEM"
+        elif args.literalE:
+            mode_tag = "KGE + LiteralE"
+        elif args.kbln:
+            mode_tag = "KGE + KBLN"
+        else:
+            mode_tag = "KGE"
+        print(f"{mode_tag} experiment for {args.model} + {args.embedding_dim} completed and stored at {args.full_storage_path}")

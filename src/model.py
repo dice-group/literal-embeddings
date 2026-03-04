@@ -116,6 +116,7 @@ class LiteralEmbeddingsExt(nn.Module):
         dropout: float = 0.3,
         gate_residual=True,
         freeze_entity_embeddings=False,
+        no_residual=False,
     ):
         super().__init__()
         self.embedding_dim = embedding_dims
@@ -123,6 +124,7 @@ class LiteralEmbeddingsExt(nn.Module):
         self.hidden_dim = embedding_dims * 2  # Combined entity + attribute embeddings
         self.gate_residual = gate_residual
         self.freeze_entity_embeddings = freeze_entity_embeddings
+        self.no_residual = no_residual
 
         #  data property (literal) embeddings
         self.data_property_embeddings = nn.Embedding(
@@ -162,13 +164,16 @@ class LiteralEmbeddingsExt(nn.Module):
             F.relu(self.layer_norm(self.fc(tuple_emb)))
         )  # [batch, 2 * emb_dim]
 
-        if self.gate_residual:
-            # Gated residual logic (inline GLU)
-            x_proj = self.gated_residual_proj(torch.cat((z, tuple_emb), dim=1))  # [batch, 4 * emb_dim]
-            value, gate = x_proj.chunk(2, dim=-1)
-            residual = value * torch.sigmoid(gate)
+        if self.no_residual:
+            residual = z
         else:
-            residual = z + tuple_emb  # Simple residual
+            if self.gate_residual:
+                # Gated residual logic (inline GLU)
+                x_proj = self.gated_residual_proj(torch.cat((z, tuple_emb), dim=1))  # [batch, 4 * emb_dim]
+                value, gate = x_proj.chunk(2, dim=-1)
+                residual = value * torch.sigmoid(gate)
+            else:
+                residual = z + tuple_emb  # Simple residual
 
         # Output scalar prediction and flatten to 1D
         out = self.fc_out(residual).flatten()  # [batch]
@@ -321,6 +326,7 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
         dropout: float = 0.15,
         gate_residual=False,
         freeze_entity_embeddings=False,
+        no_residual=False,
     ):
         super().__init__()
         self.embedding_dim = embedding_dims
@@ -328,6 +334,7 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
         self.hidden_dim = embedding_dims * 2  # Combined entity + attribute embeddings
         self.gate_residual = gate_residual
         self.freeze_entity_embeddings = freeze_entity_embeddings
+        self.no_residual = no_residual
 
         # data property (literal) embeddings
         self.data_property_embeddings = nn.Embedding(
@@ -392,22 +399,17 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
         # Clifford linear transformation with layer norm and activation
         z = self.dropout(F.relu(self.layer_norm(self.clif_1(x))))
 
-        if self.gate_residual:
-            # Blade-level gated residual logic
-            # Concatenate z and x at the channel dimension for blade-level gating
-            concat_features = torch.cat((z, x), dim=1)  # [batch, 2*in_channels, n_blades]
-            
-            # Apply Clifford gating transformation
-            gated_output = self.gated_residual_proj(concat_features)  # [batch, 2*in_channels, n_blades]
-            
-            # Split into value and gate components at channel dimension
-            value, gate = gated_output.chunk(2, dim=1)  # Each: [batch, in_channels, n_blades]
-            
-            # Apply sigmoid gating at blade level
-            z = value * torch.sigmoid(gate)  # [batch, in_channels, n_blades]
+        if self.no_residual:
+            pass
         else:
-            # Simple residual connection
-            z = z + x  # [batch, in_channels, n_blades]
+            if self.gate_residual:
+                # Blade-level gated residual logic
+                concat_features = torch.cat((z, x), dim=1)  # [batch, 2*in_channels, n_blades]
+                gated_output = self.gated_residual_proj(concat_features)  # [batch, 2*in_channels, n_blades]
+                value, gate = gated_output.chunk(2, dim=1)  # Each: [batch, in_channels, n_blades]
+                z = value * torch.sigmoid(gate)  # [batch, in_channels, n_blades]
+            else:
+                z = z + x  # Simple residual connection
         
         out = self.out(z)
         return out[:,:,0].flatten()
@@ -417,4 +419,3 @@ class LiteralEmbeddingsCliffordExt(nn.Module):
     @property
     def device(self):
         return next(self.parameters()).device
-

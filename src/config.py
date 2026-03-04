@@ -3,9 +3,16 @@ import json
 import os
 
 
+def bounded_unit_float(value):
+    value = float(value)
+    if not 0.0 <= value <= 1.0:
+        raise argparse.ArgumentTypeError("Value must be between 0 and 1.")
+    return value
+
+
 def get_default_arguments(args_list=None):
     """Extends pytorch_lightning Trainer's arguments with ours
-    
+
     Args:
         args_list: Optional list of arguments to parse. If None, uses sys.argv
     """
@@ -30,19 +37,17 @@ def get_default_arguments(args_list=None):
         default=None,
         help="An endpoint of a triple store, e.g. 'http://localhost:3030/mutagenesis/'. ",
     )
-    # TODO: Deprecate --path_single_kg
-    # TODO: --dataset_dir either be a single KG file or a folder.
     parser.add_argument(
         "--path_single_kg",
         type=str,
-        default=None, 
+        default=None,
         help="Path of a file corresponding to the input knowledge graph",
     )
     # Saved files related arguments
     parser.add_argument(
         "--path_to_store_single_run",
         type=str,
-        default=None,  # "DBpedia",
+        default=None,
         help="A single directory created that contains related data about embeddings.",
     )
     parser.add_argument(
@@ -114,7 +119,6 @@ def get_default_arguments(args_list=None):
             "Pykeen_ComplEx",
             "LFMult",
             "DeCaL",
-            "Lit_Keci"
         ],
         help="Available knowledge graph embedding models. "
         "To use other knowledge graph embedding models available in python, e.g.,"
@@ -256,14 +260,12 @@ def get_default_arguments(args_list=None):
         default=None,
         help="At every X number of epochs model will be saved. If None, we save 4 times.",
     )
-    # Continual Learning
     parser.add_argument(
         "--continual_learning",
         type=str,
         default=None,
         help="The path of a folder containing a pretrained model and configurations",
     )
-
     parser.add_argument(
         "--sample_triples_ratio", type=float, default=None, help="Sample input data."
     )
@@ -279,7 +281,6 @@ def get_default_arguments(args_list=None):
         default=0.0,
         help="Add x % of noisy triples into training dataset.",
     )
-    # WIP
 
     parser.add_argument("--r", type=int, default=1, help="R for Clifford Algebra")
     parser.add_argument("--block_size", type=int, default=8, help="Block size for BytE")
@@ -305,13 +306,17 @@ def get_default_arguments(args_list=None):
         "--degree", type=int, default=0, help="degree for polynomial embeddings"
     )
     parser.add_argument(
-        "--alpha", type=int, default=1, help="Weight of KGE Model for combined Training"
+        "--lit_weight",
+        type=bounded_unit_float,
+        default=0.5,
+        help="Default literal-loss weight for combined training. Must be between 0 and 1.",
     )
     parser.add_argument(
-        "--beta",
-        type=int,
-        default=1,
-        help="Weight of Literal Embedding Model for combined Training",
+        "--combined_loss_strategy",
+        type=str,
+        default="grad",
+        choices=["grad", "harmonic", "uncertainty"],
+        help="Strategy for combining entity and literal losses during combined training.",
     )
     parser.add_argument(
         "--combined_training",
@@ -335,14 +340,14 @@ def get_default_arguments(args_list=None):
         "--literal_training",
         action="store_true",
         default=False,
-        help="Training of  Literal Embedding Model",
+        help="Training of Literal Embedding Model",
     )
     parser.add_argument(
         "--literal_model",
         type=str,
         default="mlp",
         choices=["mlp", "clifford"],
-        help="Type of literal embedding model to use. Choices: 'mlp' (MLP-based) or 'clifford' (Clifford algebra-based). Default: 'mlp'",
+        help="Type of literal embedding model to use.",
     )
     parser.add_argument(
         "--skip_eval_literals",
@@ -405,6 +410,12 @@ def get_default_arguments(args_list=None):
         help="Early stopping for training",
     )
     parser.add_argument(
+        "--early_stopping_patience",
+        type=int,
+        default=10,
+        help="Patience for early stopping on validation loss.",
+    )
+    parser.add_argument(
         "--deferred_literal_training_epochs",
         type=int,
         default=0,
@@ -439,28 +450,56 @@ def get_default_arguments(args_list=None):
         action="store_true",
         help="Perform multi-output regression for Literal Embedding model.",
     )
-    parser.add_argument("--update_entity_embeddings", action="store_true", default=False,
-                   help="Allow entity embeddings to be updated during training")
-    
-     # Learning rate scheduling with configuration
-    parser.add_argument("--adaptive_lr", type=json.loads, default={},
-                        help='Enable adaptive learning rate scheduling with configuration. '
-                             'Example: {"scheduler_name": "cca", "lr_min": 0.01, "num_cycles": 10, '
-                             '"weighted_ensemble": true, "n_snapshots": 5}. '
-                             'Available schedulers: cca, mmcclr, deferred_cca, deferred_mmcclr')
-    parser.add_argument("--swa_start_epoch", type=int, default=None,
-                        help='Epoch at which to start applying stochastic weight averaging.')
-    parser.add_argument('--eval_every_n_epochs', type=int, default=0,
-                        help='Evaluate model every n epochs. If 0, no evaluation is applied.')
-    parser.add_argument('--save_every_n_epochs', action='store_true',
-                        help='Save model every n epochs. If True, save model at every epoch.')
-    parser.add_argument('--eval_at_epochs',type=int,nargs='+', default=None,
-        help="List of epoch numbers at which to evaluate the model (e.g., 1 5 10).")
-    parser.add_argument("--n_epochs_eval_model", type=str, default="val_test",
-                        choices=["None", "train", "train_val", "train_val_test", "val_test", "val", "train_test","test"],
-                        help='Evaluating link prediction performance on data splits while performing periodic evaluation.')
-    parser.add_argument("--use_best_config", action='store_true', default=False,
-                        help='Use the best configuration found during hyperparameter search.')
+    parser.add_argument(
+        "--update_entity_embeddings",
+        action="store_true",
+        default=False,
+        help="Allow entity embeddings to be updated during training",
+    )
+
+    parser.add_argument(
+        "--adaptive_lr",
+        type=json.loads,
+        default={},
+        help='Enable adaptive learning rate scheduling with configuration.',
+    )
+    parser.add_argument(
+        "--swa_start_epoch",
+        type=int,
+        default=None,
+        help="Epoch at which to start applying stochastic weight averaging.",
+    )
+    parser.add_argument(
+        "--eval_every_n_epochs",
+        type=int,
+        default=0,
+        help="Evaluate model every n epochs. If 0, no evaluation is applied.",
+    )
+    parser.add_argument(
+        "--save_every_n_epochs",
+        action="store_true",
+        help="Save model every n epochs. If True, save model at every epoch.",
+    )
+    parser.add_argument(
+        "--eval_at_epochs",
+        type=int,
+        nargs="+",
+        default=None,
+        help="List of epoch numbers at which to evaluate the model (e.g., 1 5 10).",
+    )
+    parser.add_argument(
+        "--n_epochs_eval_model",
+        type=str,
+        default="val_test",
+        choices=["None", "train", "train_val", "train_val_test", "val_test", "val", "train_test", "test"],
+        help="Evaluating link prediction performance on data splits while performing periodic evaluation.",
+    )
+    parser.add_argument(
+        "--use_best_config",
+        action="store_true",
+        default=False,
+        help="Use the best configuration found during hyperparameter search.",
+    )
 
     parsed_args = parser.parse_args(args_list)
     if parsed_args.path_single_kg:
