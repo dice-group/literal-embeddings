@@ -102,14 +102,14 @@ def get_literal_components(args, entity_dataset, literal_dataset=None):
         literal_dataset = get_literal_dataset(args, entity_dataset)
 
     from src.model import LiteralEmbeddingsCliffordExt, LiteralEmbeddingsExt
-        
+    gate_residual_combined = getattr(args, "gate_residual_combined", False)
     # Use external embedding model that takes embeddings as input
     if args.literal_model == "clifford":
         Literal_model = LiteralEmbeddingsCliffordExt(
             num_of_data_properties=literal_dataset.num_data_properties,
             embedding_dims=args.embedding_dim,
             dropout=getattr(args, 'dropout', 0.15),
-            gate_residual=getattr(args, 'gate_residual', True),
+            gate_residual=gate_residual_combined,
             freeze_entity_embeddings=args.freeze_entity_embeddings_combined,
             no_residual=getattr(args, 'no_residual', False),
         )
@@ -118,7 +118,7 @@ def get_literal_components(args, entity_dataset, literal_dataset=None):
             num_of_data_properties=literal_dataset.num_data_properties,
             embedding_dims=args.embedding_dim,
             dropout=getattr(args, 'dropout', 0.3),
-            gate_residual=getattr(args, 'gate_residual', True),
+            gate_residual=gate_residual_combined,
             freeze_entity_embeddings=args.freeze_entity_embeddings_combined,
             no_residual=getattr(args, 'no_residual', False),
         )
