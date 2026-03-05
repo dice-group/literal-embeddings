@@ -201,10 +201,30 @@ def save_literal_experiments(args=None, literal_model=None, lit_results=None, li
     with open(config_path, "w") as f:
         json.dump(exp_configs, f, indent=4)
 
-    # Save aggregated literal prediction results (if available)
+    # Save literal prediction results (if available)
     if results_df is not None:
-        results_path = os.path.join(args.full_storage_path, "lit_eval_results.csv")
-        results_df.to_csv(results_path, index=False)
+        has_multi_run_cols = any(col.startswith("MAE_run_") or col.startswith("RMSE_run_") for col in results_df.columns)
+
+        if has_multi_run_cols:
+            # Keep per-run outputs in a dedicated n-run file
+            results_n_run_path = os.path.join(args.full_storage_path, "lit_eval_results_n_run.csv")
+            results_df.to_csv(results_n_run_path, index=False)
+
+            # Aggregate n-run results into a compact relation-wise dataframe
+            agg_df = pd.DataFrame({"relation": results_df["relation"]})
+            for metric in ("MAE", "RMSE"):
+                run_cols = [c for c in results_df.columns if c.startswith(f"{metric}_run_")]
+                if run_cols:
+                    agg_df[f"{metric}_mean"] = results_df[run_cols].mean(axis=1)
+                    agg_df[f"{metric}_std"] = results_df[run_cols].std(axis=1)
+
+            # Keep aggregated outputs in the main results file
+            agg_path = os.path.join(args.full_storage_path, "lit_eval_results.csv")
+            agg_df.to_csv(agg_path, index=False)
+        else:
+            # Single-run case: save directly to the default results file
+            results_path = os.path.join(args.full_storage_path, "lit_eval_results.csv")
+            results_df.to_csv(results_path, index=False)
     
     # Save literal model state (if provided)
     if literal_model is not None:

@@ -1,12 +1,12 @@
 #!/bin/bash
 
-models=("ComplEx" "OMult")
+models=("ComplEx" "OMult" "Keci" "QMult" "DualE" "TransE" "Pykeen_RotatE")
 datasets=("YAGO15k")
 
 
 for model in "${models[@]}"; do
   for dataset in "${datasets[@]}"; do
-    exp_dir="Experiments/KGE/${dataset}/${model}_64"
+    exp_dir="Experiments/KGE_LitEm_all_triples/${dataset}-${model}-128"
 
     echo "==================================================="
     echo "Model: $model | Dataset: $dataset"

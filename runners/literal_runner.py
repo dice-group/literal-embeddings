@@ -39,6 +39,9 @@ def train_literals(args):
     e2idx = model_components.entity_to_idx
     args.embedding_dim = model_components.embedding_dim
     args.model = model_components.model_name
+    if args.model == "Pykeen_RotatE":
+        args.embedding_dim = args.embedding_dim * 2
+        print(f"Detected RotatE model. Using doubled literal embedding_dim={args.embedding_dim}")
     dataset_name = os.path.basename(args.dataset_dir)
     
     print(f"Training Literal Embedding model using pre-trained KGE model at {args.pretrained_kge_path}")

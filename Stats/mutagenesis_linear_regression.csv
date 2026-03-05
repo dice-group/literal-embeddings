@@ -1,0 +1,5 @@
+relation,MAE,RMSE
+http://dl-learner.org/mutagenesis#act,2.5270984898442808,3.165734263265596
+http://dl-learner.org/mutagenesis#charge,0.1898312155258803,0.2582142168164686
+http://dl-learner.org/mutagenesis#logp,1.0006321482036429,1.2978597351699348
+http://dl-learner.org/mutagenesis#lumo,0.368909221842669,0.43998263305658

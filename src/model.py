@@ -55,6 +55,17 @@ class LiteralEmbeddings(nn.Module):
         # Gated residual layer with layer norm
         self.gated_residual_proj = nn.Linear(self.hidden_dim * 2, self.hidden_dim * 2)
         self.layer_norm = nn.LayerNorm(self.hidden_dim)
+        self._init_mlp_weights()
+
+    def _init_mlp_weights(self):
+        """Initialize MLP-related layers with Xavier normal."""
+        nn.init.xavier_normal_(self.data_property_embeddings.weight)
+        nn.init.xavier_normal_(self.fc.weight)
+        nn.init.zeros_(self.fc.bias)
+        nn.init.xavier_normal_(self.fc_out.weight)
+        nn.init.zeros_(self.fc_out.bias)
+        nn.init.xavier_normal_(self.gated_residual_proj.weight)
+        nn.init.zeros_(self.gated_residual_proj.bias)
 
     def forward(self, entity_idx, attr_idx):
         """
@@ -140,6 +151,17 @@ class LiteralEmbeddingsExt(nn.Module):
         # Gated residual layer with layer norm
         self.gated_residual_proj = nn.Linear(self.hidden_dim * 2, self.hidden_dim * 2)
         self.layer_norm = nn.LayerNorm(self.hidden_dim)
+        self._init_mlp_weights()
+
+    def _init_mlp_weights(self):
+        """Initialize MLP-related layers with Xavier normal."""
+        nn.init.xavier_normal_(self.data_property_embeddings.weight)
+        nn.init.xavier_normal_(self.fc.weight)
+        nn.init.zeros_(self.fc.bias)
+        nn.init.xavier_normal_(self.fc_out.weight)
+        nn.init.zeros_(self.fc_out.bias)
+        nn.init.xavier_normal_(self.gated_residual_proj.weight)
+        nn.init.zeros_(self.gated_residual_proj.bias)
 
     def forward(self, entity_embeddings, attr_idx):
         """
