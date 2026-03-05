@@ -3,11 +3,11 @@ import os
 import shutil
 import torch
 
-from dicee.evaluator import Evaluator
 from dicee.knowledge_graph import KG
 from dicee.static_funcs import  read_or_load_kg, store
 
 from src.abstracts import KGETrainer
+from src.evaluator import Evaluator
 from src.trainer import KGECombinedTrainer, KGEEntityTrainer
 from src.static_funcs import evaluate_lit_preds, save_kge_experiments, get_full_storage_path
 from src.static_train_utils import (
