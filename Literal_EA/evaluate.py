@@ -54,7 +54,14 @@ class Evaluator:
         hits_range = list(range(1, 11))
         hits = {i: [] for i in hits_range}
         ranks = []
-        device = "cuda" if hasattr(model, "cuda") and model.cuda() and torch.cuda.is_available() else "cpu"
+        device = torch.device("cpu")
+        if hasattr(model, "parameters"):
+            try:
+                device = next(model.parameters()).device
+            except StopIteration:
+                device = torch.device("cpu")
+        if isinstance(device, str):
+            device = torch.device(device)
         num_triples = 0
 
         for batch in data_loader:
@@ -65,7 +72,15 @@ class Evaluator:
             batch_size_actual = e1_idx.size(0)
             num_triples += batch_size_actual
 
-            predictions = model(e1_idx, r_idx)  # [batch_size, num_entities]
+            if hasattr(model, "forward_k_vs_all"):
+                hr = torch.stack((e1_idx, r_idx), dim=1)
+                predictions = model.forward_k_vs_all(hr)  # [batch_size, num_entities]
+            else:
+                try:
+                    predictions = model(e1_idx, r_idx)  # [batch_size, num_entities]
+                except TypeError:
+                    hr = torch.stack((e1_idx, r_idx), dim=1)
+                    predictions = model(hr)  # [batch_size, num_entities]
             
             # Apply filtered evaluation
             for j in range(batch_size_actual):
