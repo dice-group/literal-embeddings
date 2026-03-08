@@ -184,6 +184,29 @@ def get_final_results_df(lit_results: list, lit_loss: list) -> tuple[pd.DataFram
     return final_results_df, final_loss_df
 
 
+def get_aggregated_lit_results_df(results_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build relation-wise aggregate metrics (mean/std) from multi-run literal results.
+    """
+    if results_df is None or "relation" not in results_df.columns:
+        return None
+
+    has_multi_run_cols = any(
+        col.startswith("MAE_run_") or col.startswith("RMSE_run_")
+        for col in results_df.columns
+    )
+    if not has_multi_run_cols:
+        return None
+
+    agg_df = pd.DataFrame({"relation": results_df["relation"]})
+    for metric in ("MAE", "RMSE"):
+        run_cols = [c for c in results_df.columns if c.startswith(f"{metric}_run_")]
+        if run_cols:
+            agg_df[f"{metric}_mean"] = results_df[run_cols].mean(axis=1)
+            agg_df[f"{metric}_std"] = results_df[run_cols].std(axis=1)
+    return agg_df
+
+
 def save_literal_experiments(args=None, literal_model=None, lit_results=None, lit_losses=None, attr_to_idx=None):
     if args is None:
         raise ValueError("args must be provided to save experiment artifacts.")
@@ -203,20 +226,13 @@ def save_literal_experiments(args=None, literal_model=None, lit_results=None, li
 
     # Save literal prediction results (if available)
     if results_df is not None:
-        has_multi_run_cols = any(col.startswith("MAE_run_") or col.startswith("RMSE_run_") for col in results_df.columns)
+        agg_df = get_aggregated_lit_results_df(results_df)
+        has_multi_run_cols = agg_df is not None
 
         if has_multi_run_cols:
             # Keep per-run outputs in a dedicated n-run file
             results_n_run_path = os.path.join(args.full_storage_path, "lit_eval_results_n_run.csv")
             results_df.to_csv(results_n_run_path, index=False)
-
-            # Aggregate n-run results into a compact relation-wise dataframe
-            agg_df = pd.DataFrame({"relation": results_df["relation"]})
-            for metric in ("MAE", "RMSE"):
-                run_cols = [c for c in results_df.columns if c.startswith(f"{metric}_run_")]
-                if run_cols:
-                    agg_df[f"{metric}_mean"] = results_df[run_cols].mean(axis=1)
-                    agg_df[f"{metric}_std"] = results_df[run_cols].std(axis=1)
 
             # Keep aggregated outputs in the main results file
             agg_path = os.path.join(args.full_storage_path, "lit_eval_results.csv")

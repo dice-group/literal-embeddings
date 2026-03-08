@@ -184,7 +184,7 @@ def build_comparison_dataframe(
         )
 
     litem_df = pd.read_csv(
-        f"Experiments/Literals/{dataset_name}/TransE_100_mlp/lit_eval_results.csv", sep=","
+        f"Experiments/Literals/{dataset_name}/TransE_128_mlp/lit_eval_results.csv", sep=","
     )
     litem_base_df = pd.read_csv(
         f"Experiments/Literals/{dataset_name}/TransE_100_mlp_no_res/lit_eval_results.csv", sep=","

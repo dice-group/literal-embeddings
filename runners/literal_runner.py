@@ -2,12 +2,18 @@ import os
 import shutil
 import torch
 
-from src.trainer_literal import train_literal_model
+from src.trainer_literal import train_literal_model, train_literal_model_with_periodic_snapshots
 from src.static_funcs import evaluate_lit_preds, load_model_components
 
 from src.static_funcs_literals import apply_best_config_to_args, get_full_storage_path_literals
 from src.static_funcs_literals import reset_random_seeds, clear_cuda_cache
-from src.static_funcs_literals import  get_literal_datasets, get_litem_model, save_literal_experiments
+from src.static_funcs_literals import (
+    get_literal_datasets,
+    get_litem_model,
+    save_literal_experiments,
+    get_final_results_df,
+    get_aggregated_lit_results_df,
+)
 
 
 def prepare_experiment_dir(path):
@@ -67,6 +73,13 @@ def train_literals(args):
             lit_result = evaluate_lit_preds( literal_dataset, dataset_type="test",
                 model=kge_model, literal_model=lit_model,device=args.device )
             lit_results.append(lit_result)
+
+    if (not args.skip_eval_literals) and args.num_literal_runs > 1 and lit_results:
+        final_results_df, _ = get_final_results_df(lit_results, lit_losses)
+        agg_df = get_aggregated_lit_results_df(final_results_df)
+        if agg_df is not None:
+            print("Aggregate literal evaluation results across runs:")
+            print(agg_df.to_string(index=False))
 
     if args.save_experiment:
         save_literal_experiments(args=args, literal_model=lit_model,
