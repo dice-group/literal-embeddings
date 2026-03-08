@@ -5,7 +5,7 @@ datasets=("FB15k-237" "DB15K" "YAGO15k" "mutagenesis")
 exp_dir="Experiments/KGE_LitEm_all_triple"
 
 for dataset in "${datasets[@]}"; do
-  pretrained_path="${exp_dir}/${dataset}-${model}-100"
+  pretrained_path="${exp_dir}/${dataset}-${model}-128"
   
   echo "=================================================="
   echo "Model: $model | Dataset: $dataset"
@@ -18,7 +18,8 @@ for dataset in "${datasets[@]}"; do
     --dataset_dir "KGs/$dataset" \
     --literal_training \
     --num_literal_runs 5 \
-    --pretrained_kge_path "$pretrained_path"
+    --pretrained_kge_path "$pretrained_path" \
+    --use_best_config
 
   echo "=================================================="
   echo "LitEM training completed"
@@ -32,7 +33,8 @@ for dataset in "${datasets[@]}"; do
     --literal_training \
     --num_literal_runs 5 \
     --pretrained_kge_path "$pretrained_path" \
-    --update_entity_embeddings
+    --update_entity_embeddings \
+    --use_best_config
 
   echo "=================================================="
   echo "LitEM training completed"
@@ -45,7 +47,8 @@ for dataset in "${datasets[@]}"; do
     --literal_training \
     --num_literal_runs 5 \
     --pretrained_kge_path "$pretrained_path" \
-    --no_residual
+    --no_residual \
+    --use_best_config
 
   echo "=================================================="
   echo "LitEM-base training completed"
@@ -58,6 +61,7 @@ for dataset in "${datasets[@]}"; do
     --dataset_dir "KGs/${dataset}_disjoint" \
     --literal_training \
     --num_literal_runs 5 \
-    --pretrained_kge_path "$pretrained_path"
+    --pretrained_kge_path "$pretrained_path" \
+    --use_best_config
   fi
 done

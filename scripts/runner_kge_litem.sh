@@ -1,9 +1,9 @@
 #!/bin/bash
 
-exp_models=("TransE")  # Make sure the model name casing is correct
+exp_models=("TransE" "ComplEx" "OMult" "Keci" "QMult" "DistMult" "Pykeen_RotatE")  # Make sure the model name casing is correct
 dataset_names=("FB15k-237" "DB15K" "YAGO15k" "mutagenesis")
 
-embedding_dim=100
+embedding_dim=128
 num_epochs=300
 
 for model in "${exp_models[@]}"; do

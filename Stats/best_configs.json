@@ -7,15 +7,15 @@
   },
   "YAGO15k": {
     "batch_size": 256,
-    "dropout": 0.3,
-    "lit_epochs": 120,
+    "dropout": 0.15,
+    "lit_epochs": 160,
     "lit_lr": 0.0005
   },
   "DB15K": {
     "batch_size": 256,
-    "dropout": 0.1,
+    "dropout": 0.3,
     "lit_epochs": 240,
-    "lit_lr": 0.001
+    "lit_lr": 0.01
   },
   "mutagenesis": {
     "batch_size": 256,

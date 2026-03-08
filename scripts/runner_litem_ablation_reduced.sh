@@ -2,7 +2,7 @@
 
 model="TransE"
 datasets=("YAGO15k" "FB15k-237")
-embedding_dim=100
+embedding_dim=128
 for dataset in "${datasets[@]}"; do
   exp_dir="Experiments/KGE_LitEm_all_triples/${dataset}-${model}-${embedding_dim}"
 
@@ -22,7 +22,8 @@ for dataset in "${datasets[@]}"; do
       --pretrained_kge_path "$exp_dir" \
       --literal_training \
       --full_storage_path "$storage_path" \
-      --model "$model"
+      --model "$model" \\
+      --use_best_config
 
     echo
   done

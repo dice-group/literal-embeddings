@@ -1,7 +1,7 @@
 #!/bin/bash
 
-models=("ComplEx" "OMult" "Keci" "QMult" "DualE" "TransE" "Pykeen_RotatE")
-datasets=("YAGO15k")
+models=("ComplEx" "OMult" "Keci" "QMult" "DistMult" "Pykeen_RotatE")
+datasets=("YAGO15k" "FB15k-237")
 
 
 for model in "${models[@]}"; do
@@ -17,8 +17,10 @@ for model in "${models[@]}"; do
       --dataset_dir "KGs/$dataset" \
       --model "$model" \
       --literal_training \
-      --num_literal_runs 3 \
-      --pretrained_kge_path "$exp_dir"
+      --num_literal_runs 5 \
+      --pretrained_kge_path "$exp_dir" \
+      --use_best_config
+
 
     echo
   done
