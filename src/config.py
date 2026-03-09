@@ -251,7 +251,7 @@ def get_default_arguments(args_list=None):
         "--eval_model",
         type=str,
         default="train_val_test",
-        choices=["None", "train", "train_val", "train_val_test", "test"],
+        choices=["None", "train", "train_val", "train_val_test", "test", "val_test", "test_val"],
         help="Evaluating link prediction performance on data splits. ",
     )
     parser.add_argument(
