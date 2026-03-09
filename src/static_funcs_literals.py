@@ -118,12 +118,18 @@ def get_litem_model(args, literal_dataset, kge_model, run ):
     # freeze entity embeddings if the flag is set
     clear_cuda_cache()
     reset_random_seeds(args.random_seed, run)
+    if kge_model.name == "RotatE":
+        embedding_dim = kge_model.embedding_dim * 2
+        print(f"Detected RotatE model. Using doubled literal embedding_dim={args.embedding_dim}")
+    else:
+        embedding_dim = kge_model.embedding_dim
+
 
     freeze_entity_embeddings = not args.update_entity_embeddings
     if args.literal_model == 'clifford':
         literal_model = LiteralEmbeddingsClifford(
             num_of_data_properties=literal_dataset.num_data_properties,
-            embedding_dims=kge_model.embedding_dim,
+            embedding_dims=embedding_dim,
             entity_embeddings=kge_model.entity_embeddings,
             freeze_entity_embeddings=freeze_entity_embeddings,
             gate_residual=args.gate_residual,
@@ -132,7 +138,7 @@ def get_litem_model(args, literal_dataset, kge_model, run ):
     elif args.literal_model == 'mlp':
         literal_model = LiteralEmbeddings(
             num_of_data_properties=literal_dataset.num_data_properties,
-            embedding_dims=kge_model.embedding_dim,
+            embedding_dims=embedding_dim,
             entity_embeddings=kge_model.entity_embeddings,
             freeze_entity_embeddings=freeze_entity_embeddings,
             dropout=getattr(args, 'dropout', 0.3),
