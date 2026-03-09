@@ -428,6 +428,12 @@ def get_default_arguments(args_list=None):
         help="Use gate residual connections in Literal Embedding Model.",
     )
     parser.add_argument(
+        "--no_gate_residual",
+        action="store_true",
+        default=False,
+        help="Disable gated residual and use plain residual connection instead.",
+    )
+    parser.add_argument(
         "--freeze_entity_embeddings_combined",
         action="store_true",
         default=False,
@@ -502,6 +508,8 @@ def get_default_arguments(args_list=None):
     )
 
     parsed_args = parser.parse_args(args_list)
+    if parsed_args.no_gate_residual:
+        parsed_args.gate_residual = False
     if parsed_args.path_single_kg:
         inferred_dataset_dir = os.path.dirname(parsed_args.path_single_kg.rstrip("/"))
         parsed_args.dataset_dir = inferred_dataset_dir or "."
