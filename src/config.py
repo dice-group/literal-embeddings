@@ -251,7 +251,7 @@ def get_default_arguments(args_list=None):
         "--eval_model",
         type=str,
         default="train_val_test",
-        choices=["None", "train", "train_val", "train_val_test", "test"],
+        choices=["None", "train", "train_val", "train_val_test", "test", "val_test", "test_val"],
         help="Evaluating link prediction performance on data splits. ",
     )
     parser.add_argument(
@@ -431,7 +431,13 @@ def get_default_arguments(args_list=None):
         "--no_gate_residual",
         action="store_true",
         default=False,
-        help="Disable gated residual and use plain residual connection instead.",
+        help="Disable gated residual and use plain residual connection instead.", 
+        )
+
+    parser.add_argument("--gate_residual_combined",
+        action="store_true",
+        default=False,
+        help="Use gate residual connections in Literal Embedding Model during combined training.",
     )
     parser.add_argument(
         "--freeze_entity_embeddings_combined",
