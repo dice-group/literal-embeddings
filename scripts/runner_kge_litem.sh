@@ -1,30 +1,50 @@
 #!/bin/bash
 
 exp_models=("TransE" "ComplEx" "OMult" "Keci" "QMult" "DistMult" "Pykeen_RotatE")  # Make sure the model name casing is correct
-dataset_names=("FB15k-237" "DB15K" "YAGO15k" "mutagenesis")
+dataset_names=("FB15k-237" "DB15K" "YAGO15k" "Mutagenesis")
 
 embedding_dim=128
 num_epochs=300
 
 for model in "${exp_models[@]}"; do
   for dataset in "${dataset_names[@]}"; do
+  if [ "$dataset" = "Mutagenesis" ]; then
+      path_single_kg="KGs/Mutagenesis/mutagenesis.owl"
+      full_storage_path="Experiments/KGE_LitEm_all_triples/${dataset}-${model}-${embedding_dim}"
 
-    path_single_kg="KGs/${dataset}/${dataset}_EntityTriples.txt"
-    full_storage_path="Experiments/KGE_LitEm_all_triples/${dataset}-${model}-${embedding_dim}"
+      echo "==========================================================="
+      echo "Model: $model | Dataset: $dataset"
+      echo "Single KG Path: $path_single_kg"
+      echo "Storage Path: $full_storage_path"
+      echo "==========================================================="
 
-    echo "==========================================================="
-    echo "Model: $model | Dataset: $dataset"
-    echo "Single KG Path: $path_single_kg"
-    echo "Storage Path: $full_storage_path"
-    echo "==========================================================="
+      python main.py \
+        --model "$model" \
+        --embedding_dim $embedding_dim \
+        --num_epochs $num_epochs \
+        --train_all_triples \
+        --path_single_kg "$path_single_kg" \
+        --full_storage_path "$full_storage_path" \
+        --backend "rdflib"
 
-    python main.py \
-      --model "$model" \
-      --embedding_dim $embedding_dim \
-      --num_epochs $num_epochs \
-      --train_all_triples \
-      --path_single_kg "$path_single_kg" \
-      --full_storage_path "$full_storage_path"
+
+  else 
+      path_single_kg="KGs/${dataset}/${dataset}_EntityTriples.txt"
+      full_storage_path="Experiments/KGE_LitEm_all_triples/${dataset}-${model}-${embedding_dim}"
+
+      echo "==========================================================="
+      echo "Model: $model | Dataset: $dataset"
+      echo "Single KG Path: $path_single_kg"
+      echo "Storage Path: $full_storage_path"
+      echo "==========================================================="
+
+      python main.py \
+        --model "$model" \
+        --embedding_dim $embedding_dim \
+        --num_epochs $num_epochs \
+        --train_all_triples \
+        --path_single_kg "$path_single_kg" \
+        --full_storage_path "$full_storage_path"
 
     echo
   done

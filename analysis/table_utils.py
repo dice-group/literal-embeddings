@@ -82,7 +82,7 @@ def _resolve_mapping(
             return relation_mappings["rel_map_fb15k"]
         if dataset_name == "YAGO15k":
             return relation_mappings["rel_map_yago15k"]
-        if dataset_name == "mutagenesis":
+        if dataset_name == "Mutagenesis":
             return relation_mappings["rel_map_mutag"]
     return None
 
@@ -187,7 +187,7 @@ def build_comparison_dataframe(
         f"Experiments/Literals/{dataset_name}/TransE_128_mlp/lit_eval_results.csv", sep=","
     )
     litem_base_df = pd.read_csv(
-        f"Experiments/Literals/{dataset_name}/TransE_100_mlp_no_res/lit_eval_results.csv", sep=","
+        f"Experiments/Literals/{dataset_name}/TransE_128_mlp_no_res/lit_eval_results.csv", sep=","
     )
     litem_df = _map_relation_column(litem_df, mapping)
     litem_base_df = _map_relation_column(litem_base_df, mapping)
@@ -298,7 +298,15 @@ def build_comparison_dataframe_models(
     missing_paths = []
 
     for model_name in model_names:
-        run_name = f"{model_name}_{embedding_dim}_{mlp_type}"
+        model_embedding_dim = embedding_dim
+        if model_name == "Pykeen_RotatE":
+            model_name = "RotatE"
+            try:
+                model_embedding_dim = int(embedding_dim) // 2
+            except (TypeError, ValueError):
+                model_embedding_dim = embedding_dim
+
+        run_name = f"{model_name}_{model_embedding_dim}_{mlp_type}"
         if no_res:
             run_name += "_no_res"
         result_path = Path(base_exp_dir) / dataset_name / run_name / "lit_eval_results.csv"
@@ -308,14 +316,29 @@ def build_comparison_dataframe_models(
 
         model_df = pd.read_csv(result_path, sep=",")
         model_df = _map_relation_column(model_df, mapping)
+        if dataset_name == "FB15k-237" and "relation" in model_df.columns:
+            excluded_relations = {
+                "location.location.area",
+                "topic_server.population_number",
+                "loc.area",
+                "pop.\\_number",
+            }
+            model_df = model_df[~model_df["relation"].isin(excluded_relations)]
         cols = ["relation"]
-        label = run_name
+        display_model_name = "RotatE" if model_name == "Pykeen_RotatE" else model_name
+        label = f"{display_model_name}_{model_embedding_dim}_{mlp_type}"
+        if no_res:
+            label += "_no_res"
 
         model_df[f"MAE_{label}"] = _extract_metric_mean(model_df, "MAE")
         cols.append(f"MAE_{label}")
         if include_rmse:
             model_df[f"RMSE_{label}"] = _extract_metric_mean(model_df, "RMSE")
             cols.append(f"RMSE_{label}")
+        for col in cols:
+            if col != "relation":
+                model_df[col] = pd.to_numeric(model_df[col], errors="coerce")
+                model_df[col] = model_df[col].map(lambda x: f"{x:.3f}" if pd.notnull(x) else "-")
         model_df = model_df[cols]
 
         if merged_df is None:

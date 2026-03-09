@@ -1,7 +1,7 @@
 #!/bin/bash
 
 model="TransE"
-datasets=("FB15k-237" "DB15K" "YAGO15k" "mutagenesis")
+datasets=("FB15k-237" "DB15K" "YAGO15k" "Mutagenesis")
 exp_dir="Experiments/KGE_LitEm_all_triple"
 
 for dataset in "${datasets[@]}"; do
