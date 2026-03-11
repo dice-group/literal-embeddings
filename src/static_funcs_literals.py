@@ -52,6 +52,8 @@ def apply_best_config_to_args(args):
     
     # Extract dataset name from dataset_dir
     dataset_name = os.path.basename(args.dataset_dir)
+    if dataset_name.endswith("_disjoint"):
+        dataset_name = dataset_name[:-len("_disjoint")]
     
     if dataset_name in configs:
         config = configs[dataset_name]

@@ -6,8 +6,8 @@ embedding_dim=128
 for dataset in "${datasets[@]}"; do
   exp_dir="Experiments/KGE_LitEm_all_triples/${dataset}-${model}-${embedding_dim}"
 
-  for ratio in 100 80 60 40 20; do
-    sampling_ratio=$(echo "$ratio / 100" | bc -l)
+  for ratio in 80 60 40 20; do
+    sampling_ratio="0.$ratio"
     storage_path="Experiments/Ablations/${dataset}_${ratio}/${model}"
 
     echo "===================================================="
@@ -22,8 +22,9 @@ for dataset in "${datasets[@]}"; do
       --pretrained_kge_path "$exp_dir" \
       --literal_training \
       --full_storage_path "$storage_path" \
-      --model "$model" \\
-      --use_best_config
+      --model "$model" \
+      --use_best_config \
+      --num_literal_runs 3
 
     echo
   done
