@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
+import os
+import json
 import pandas as pd
 
 
@@ -281,7 +283,7 @@ def build_comparison_dataframe_models(
     Build a comparison dataframe across models from experiment folders.
 
     Expected path pattern per model:
-    {base_exp_dir}/{dataset_name}/{model}_{embedding_dim}_{mlp_type}[ _no_res]/lit_eval_results.csv
+    {base_exp_dir}/{dataset_name}_combined/{model}_{embedding_dim}/lit_results.json
     """
     if not model_names:
         raise ValueError("model_names must be a non-empty list.")
@@ -354,3 +356,642 @@ def build_comparison_dataframe_models(
 
     metric_cols = sorted([c for c in merged_df.columns if c != "relation"])
     return merged_df[["relation"] + metric_cols]
+
+def build_comparison_dataframe_models_combined(
+    dataset_name: str,
+    model_names: list[str],
+    embedding_dim: int | str,
+    mlp_type: str = "mlp",
+    no_res: bool = False,
+    base_exp_dir: str = "Experiments/KGE_Combined",
+    include_rmse: bool = False,
+    rel_mapping_name: str | None = None,
+    rel_mapping: dict | None = None,
+    relation_mappings: dict | None = None,
+) -> pd.DataFrame:
+    """
+    Build a comparison dataframe across models from experiment folders.
+
+    Expected path pattern per model:
+    {base_exp_dir}/{dataset_name}/{model}_{embedding_dim}_{mlp_type}[ _no_res]/lit_eval_results.csv
+    """
+    if not model_names:
+        raise ValueError("model_names must be a non-empty list.")
+
+    relation_mappings = relation_mappings or load_relation_mappings()
+    mapping = _resolve_mapping(
+        relation_mappings=relation_mappings,
+        dataset_name=dataset_name,
+        rel_mapping_name=rel_mapping_name,
+        rel_mapping=rel_mapping,
+    )
+
+    merged_df = None
+    missing_paths = []
+
+    for model_name in model_names:
+        model_embedding_dim = embedding_dim
+        if model_name == "Pykeen_RotatE":
+            model_name = "RotatE"
+            try:
+                model_embedding_dim = int(embedding_dim) // 2
+            except (TypeError, ValueError):
+                model_embedding_dim = embedding_dim
+
+        result_path = (
+            Path(base_exp_dir)
+            / f"{dataset_name}_combined"
+            / f"{model_name}_{model_embedding_dim}"
+            / "lit_results.json"
+        )
+        if not result_path.exists():
+            missing_paths.append(str(result_path))
+            continue
+
+        model_df = pd.read_json(result_path)
+        model_df = _map_relation_column(model_df, mapping)
+        if dataset_name == "FB15k-237" and "relation" in model_df.columns:
+            excluded_relations = {
+                "location.location.area",
+                "topic_server.population_number",
+                "loc.area",
+                "pop.\\_number",
+            }
+            model_df = model_df[~model_df["relation"].isin(excluded_relations)]
+        cols = ["relation"]
+        display_model_name = "RotatE" if model_name == "Pykeen_RotatE" else model_name
+        label = f"{display_model_name}_{model_embedding_dim}_{mlp_type}"
+        if no_res:
+            label += "_no_res"
+
+        model_df[f"MAE_{label}"] = _extract_metric_mean(model_df, "MAE")
+        cols.append(f"MAE_{label}")
+        if include_rmse:
+            model_df[f"RMSE_{label}"] = _extract_metric_mean(model_df, "RMSE")
+            cols.append(f"RMSE_{label}")
+        for col in cols:
+            if col != "relation":
+                model_df[col] = pd.to_numeric(model_df[col], errors="coerce")
+                model_df[col] = model_df[col].map(lambda x: f"{x:.3f}" if pd.notnull(x) else "-")
+        model_df = model_df[cols]
+
+        if merged_df is None:
+            merged_df = model_df
+        else:
+            merged_df = pd.merge(merged_df, model_df, on="relation", how="inner")
+
+    if merged_df is None:
+        raise FileNotFoundError("No lit_results.json found for the requested models.")
+
+    if missing_paths:
+        print(f"Warning: skipped models with missing results: {missing_paths}")
+
+    metric_cols = sorted([c for c in merged_df.columns if c != "relation"])
+    return merged_df[["relation"] + metric_cols]
+
+
+def build_literal_means_with_disjoint(
+    dataset_name: str,
+    model_name: str = "TransE",
+    embedding_dim: int | str = 128,
+    mlp_type: str = "mlp",
+    no_res: bool = False,
+    base_exp_dir: str = "Experiments/Literals",
+    rel_mapping_name: str | None = None,
+    rel_mapping: dict | None = None,
+    relation_mappings: dict | None = None,
+    use_scientific_notation_relations: Iterable[str] | None = None,
+    scientific_threshold: float = 1e3,
+) -> pd.DataFrame:
+    """
+    Build a dataframe with relation-level MAE/RMSE means for standard and disjoint splits.
+
+    Output columns:
+    relation, MAE_mean, RMSE_mean, MAE_mean_disjoint, RMSE_mean_disjoint
+
+    Expected path pattern:
+    {base_exp_dir}/{dataset_name}/{model}_{embedding_dim}_{mlp_type}[ _no_res]/lit_eval_results.csv
+    {base_exp_dir}/{dataset_name}_disjoint/{model}_{embedding_dim}_{mlp_type}[ _no_res]/lit_eval_results.csv
+    """
+    relation_mappings = relation_mappings or load_relation_mappings()
+    mapping = _resolve_mapping(
+        relation_mappings=relation_mappings,
+        dataset_name=dataset_name,
+        rel_mapping_name=rel_mapping_name,
+        rel_mapping=rel_mapping,
+    )
+
+    run_name = f"{model_name}_{embedding_dim}_{mlp_type}"
+    if no_res:
+        run_name += "_no_res"
+
+    normal_path = Path(base_exp_dir) / dataset_name / run_name / "lit_eval_results.csv"
+    disjoint_path = (
+        Path(base_exp_dir) / f"{dataset_name}_disjoint" / run_name / "lit_eval_results.csv"
+    )
+
+    if not normal_path.exists():
+        raise FileNotFoundError(f"Missing lit_eval_results.csv: {normal_path}")
+    if not disjoint_path.exists():
+        raise FileNotFoundError(f"Missing lit_eval_results.csv: {disjoint_path}")
+
+    normal_df = pd.read_csv(normal_path, sep=",")
+    disjoint_df = pd.read_csv(disjoint_path, sep=",")
+
+    normal_df = _map_relation_column(normal_df, mapping)
+    disjoint_df = _map_relation_column(disjoint_df, mapping)
+
+    normal_df["MAE_mean"] = _extract_metric_mean(normal_df, "MAE")
+    normal_df["RMSE_mean"] = _extract_metric_mean(normal_df, "RMSE")
+    normal_df = normal_df[["relation", "MAE_mean", "RMSE_mean"]]
+
+    disjoint_df["MAE_mean_disjoint"] = _extract_metric_mean(disjoint_df, "MAE")
+    disjoint_df["RMSE_mean_disjoint"] = _extract_metric_mean(disjoint_df, "RMSE")
+    disjoint_df = disjoint_df[["relation", "MAE_mean_disjoint", "RMSE_mean_disjoint"]]
+
+    merged_df = pd.merge(normal_df, disjoint_df, on="relation", how="inner")
+    ordered_cols = [
+        "relation",
+        "MAE_mean",
+        "RMSE_mean",
+        "MAE_mean_disjoint",
+        "RMSE_mean_disjoint",
+    ]
+    merged_df = merged_df[ordered_cols]
+    for col in ordered_cols:
+        if col != "relation":
+            merged_df[col] = pd.to_numeric(merged_df[col], errors="coerce")
+            merged_df[col] = merged_df[col].map(lambda x: f"{x:.3f}" if pd.notnull(x) else "-")
+
+    if use_scientific_notation_relations:
+        target_relations = set(use_scientific_notation_relations)
+        for idx, row in merged_df.iterrows():
+            if row["relation"] in target_relations:
+                for col in ordered_cols:
+                    if col != "relation" and row[col] != "-":
+                        try:
+                            val = float(row[col])
+                            if abs(val) > scientific_threshold:
+                                merged_df.at[idx, col] = f"{val:.2e}"
+                        except Exception:
+                            continue
+    return merged_df
+
+
+def build_ablation_table(
+    dataset_name: str,
+    splits: Iterable[int] = (20, 40, 60, 80),
+    model_name: str = "TransE",
+    base_exp_dir: str = "Experiments/Ablations",
+    rel_mapping_name: str | None = None,
+    rel_mapping: dict | None = None,
+    relation_mappings: dict | None = None,
+    sort_by: str | None = None,
+    descending: bool = True,
+) -> pd.DataFrame:
+    """
+    Build a relation-level ablation table across splits.
+
+    Output columns:
+    relation, MAE_mean_{split}, RMSE_mean_{split} for each split.
+
+    Expected path pattern:
+    {base_exp_dir}/{dataset_name}_{split}/{model_name}/lit_eval_results.csv
+    """
+    relation_mappings = relation_mappings or load_relation_mappings()
+    mapping = _resolve_mapping(
+        relation_mappings=relation_mappings,
+        dataset_name=dataset_name,
+        rel_mapping_name=rel_mapping_name,
+        rel_mapping=rel_mapping,
+    )
+
+    merged_df = None
+    missing_paths = []
+    splits = list(splits)
+
+    for split in splits:
+        result_path = (
+            Path(base_exp_dir)
+            / f"{dataset_name}_{split}"
+            / model_name
+            / "lit_eval_results.csv"
+        )
+        if not result_path.exists():
+            missing_paths.append(str(result_path))
+            continue
+
+        split_df = pd.read_csv(result_path, sep=",")
+        split_df = _map_relation_column(split_df, mapping)
+
+        split_df[f"MAE_mean_{split}"] = _extract_metric_mean(split_df, "MAE")
+        split_df[f"RMSE_mean_{split}"] = _extract_metric_mean(split_df, "RMSE")
+        split_df = split_df[["relation", f"MAE_mean_{split}", f"RMSE_mean_{split}"]]
+
+        if merged_df is None:
+            merged_df = split_df
+        else:
+            merged_df = pd.merge(merged_df, split_df, on="relation", how="inner")
+
+    if merged_df is None:
+        raise FileNotFoundError("No lit_eval_results.csv found for the requested ablation splits.")
+
+    if missing_paths:
+        print(f"Warning: skipped splits with missing results: {missing_paths}")
+
+    ordered_cols = ["relation"]
+    for split in splits:
+        mae_col = f"MAE_mean_{split}"
+        rmse_col = f"RMSE_mean_{split}"
+        if mae_col in merged_df.columns:
+            ordered_cols.append(mae_col)
+        if rmse_col in merged_df.columns:
+            ordered_cols.append(rmse_col)
+
+    merged_df = merged_df[ordered_cols]
+
+    for col in ordered_cols:
+        if col != "relation":
+            merged_df[col] = pd.to_numeric(merged_df[col], errors="coerce")
+
+    if sort_by is None:
+        for split in splits:
+            candidate = f"MAE_mean_{split}"
+            if candidate in merged_df.columns:
+                sort_by = candidate
+                break
+
+    if sort_by and sort_by in merged_df.columns:
+        merged_df = merged_df.sort_values(by=sort_by, ascending=not descending)
+
+    for col in ordered_cols:
+        if col != "relation":
+            merged_df[col] = merged_df[col].map(lambda x: f"{x:.3f}" if pd.notnull(x) else "-")
+
+    return merged_df
+
+
+def build_ablation_delta_table(
+    dataset_name: str,
+    splits: Iterable[int] = (80, 60, 40, 20),
+    model_name: str = "TransE",
+    base_ablation_dir: str = "Experiments/Ablations",
+    base_literal_dir: str = "Experiments/Literals",
+    baseline_model_name: str = "TransE",
+    baseline_embedding_dim: int | str = 128,
+    baseline_mlp_type: str = "mlp",
+    baseline_no_res: bool = False,
+    rel_mapping_name: str | None = None,
+    rel_mapping: dict | None = None,
+    relation_mappings: dict | None = None,
+    decimals: int = 2,
+    descending: bool = True,
+    sort_by: str | None = None,
+) -> pd.DataFrame:
+    """
+    Build a relation-level ablation table with % deltas vs a baseline literal run.
+
+    Output columns:
+    relation, MAE_{split}, RMSE_{split} (percent change vs baseline)
+
+    Ablation path pattern:
+    {base_ablation_dir}/{dataset_name}_{split}/{model_name}/lit_eval_results.csv
+
+    Baseline path pattern:
+    {base_literal_dir}/{dataset_name}/{baseline_model_name}_{baseline_embedding_dim}_{baseline_mlp_type}[ _no_res]/lit_eval_results.csv
+    """
+    relation_mappings = relation_mappings or load_relation_mappings()
+    mapping = _resolve_mapping(
+        relation_mappings=relation_mappings,
+        dataset_name=dataset_name,
+        rel_mapping_name=rel_mapping_name,
+        rel_mapping=rel_mapping,
+    )
+
+    baseline_run = f"{baseline_model_name}_{baseline_embedding_dim}_{baseline_mlp_type}"
+    if baseline_no_res:
+        baseline_run += "_no_res"
+    baseline_path = Path(base_literal_dir) / dataset_name / baseline_run / "lit_eval_results.csv"
+    if not baseline_path.exists():
+        raise FileNotFoundError(f"Missing baseline lit_eval_results.csv: {baseline_path}")
+
+    baseline_df = pd.read_csv(baseline_path, sep=",")
+    baseline_df = _map_relation_column(baseline_df, mapping)
+    baseline_df["MAE_base"] = _extract_metric_mean(baseline_df, "MAE")
+    baseline_df["RMSE_base"] = _extract_metric_mean(baseline_df, "RMSE")
+    baseline_df = baseline_df[["relation", "MAE_base", "RMSE_base"]]
+
+    merged_df = baseline_df
+    missing_paths = []
+    splits = list(splits)
+
+    for split in splits:
+        result_path = (
+            Path(base_ablation_dir)
+            / f"{dataset_name}_{split}"
+            / model_name
+            / "lit_eval_results.csv"
+        )
+        if not result_path.exists():
+            missing_paths.append(str(result_path))
+            continue
+
+        split_df = pd.read_csv(result_path, sep=",")
+        split_df = _map_relation_column(split_df, mapping)
+        split_df[f"MAE_{split}"] = _extract_metric_mean(split_df, "MAE")
+        split_df[f"RMSE_{split}"] = _extract_metric_mean(split_df, "RMSE")
+        split_df = split_df[["relation", f"MAE_{split}", f"RMSE_{split}"]]
+
+        merged_df = pd.merge(merged_df, split_df, on="relation", how="inner")
+
+    if missing_paths:
+        print(f"Warning: skipped splits with missing results: {missing_paths}")
+
+    for split in splits:
+        mae_col = f"MAE_{split}"
+        rmse_col = f"RMSE_{split}"
+        if mae_col in merged_df.columns:
+            merged_df[mae_col] = (
+                (merged_df[mae_col] - merged_df["MAE_base"]) / merged_df["MAE_base"]
+            ) * 100
+        if rmse_col in merged_df.columns:
+            merged_df[rmse_col] = (
+                (merged_df[rmse_col] - merged_df["RMSE_base"]) / merged_df["RMSE_base"]
+            ) * 100
+
+    merged_df = merged_df.drop(columns=["MAE_base", "RMSE_base"])
+
+    ordered_cols = ["relation"]
+    for split in splits:
+        mae_col = f"MAE_{split}"
+        rmse_col = f"RMSE_{split}"
+        if mae_col in merged_df.columns:
+            ordered_cols.append(mae_col)
+        if rmse_col in merged_df.columns:
+            ordered_cols.append(rmse_col)
+    merged_df = merged_df[ordered_cols]
+
+    for col in ordered_cols:
+        if col != "relation":
+            merged_df[col] = pd.to_numeric(merged_df[col], errors="coerce")
+
+    if sort_by is None:
+        for split in splits:
+            candidate = f"MAE_{split}"
+            if candidate in merged_df.columns:
+                sort_by = candidate
+                break
+    if sort_by and sort_by in merged_df.columns:
+        merged_df = merged_df.sort_values(by=sort_by, ascending=not descending)
+
+    fmt = f"{{:.{decimals}f}}"
+    for col in ordered_cols:
+        if col != "relation":
+            merged_df[col] = merged_df[col].map(lambda x: fmt.format(x) if pd.notnull(x) else "-")
+
+    return merged_df
+
+
+def _format_metric(value):
+    if value == "":
+        return ""
+    try:
+        return f"{float(value):.3f}"
+    except (TypeError, ValueError):
+        return value
+
+
+def _insert_dataset_spacer_columns(df_in, datasets, metrics):
+    if len(datasets) <= 1:
+        return df_in
+
+    reordered_columns = ["Model"]
+    for index, dataset in enumerate(datasets):
+        reordered_columns.extend([f"{metric}_{dataset}" for metric in metrics])
+        if index != len(datasets) - 1:
+            spacer_name = f"Spacer_{index + 1}"
+            df_in[spacer_name] = ""
+            reordered_columns.append(spacer_name)
+    return df_in[reordered_columns]
+
+
+def _bold_blockwise_maxima(df_in, block_size, metric_columns):
+    df_out = df_in.copy()
+    if block_size <= 0:
+        return df_out
+    for column in metric_columns:
+        df_out[column] = df_out[column].astype(object)
+
+    for start in range(0, len(df_out), block_size):
+        block = df_out.iloc[start:start + block_size]
+        if block.empty:
+            continue
+        for column in metric_columns:
+            numeric_values = pd.to_numeric(block[column], errors="coerce")
+            if numeric_values.isna().all():
+                continue
+            best_value = numeric_values.max()
+            best_rows = numeric_values[numeric_values == best_value].index
+            for row_index in best_rows:
+                df_out.at[row_index, column] = f"\\textbf{{{best_value:.3f}}}"
+    return df_out
+
+import re
+def dataframe_to_latex(df, **kwargs):
+    latex = df.to_latex(escape=False, **kwargs)
+    return re.sub(r"^\\midrule(?:\s*&\s*)*\\\\$", r"\\midrule", latex, flags=re.MULTILINE)
+
+
+def _resolve_combined_eval_path(
+    dataset: str,
+    model: str,
+    embedding_dim: int,
+    strategy: str = "auto",
+):
+    strategy_key = str(strategy).strip().lower()
+    if strategy_key == "auto":
+        strategy_order = ("grad", "harmonic", "uncertainty", "legacy")
+    else:
+        strategy_order = (strategy_key,)
+
+    def _candidate_path(curr_strategy: str):
+        if curr_strategy in {"legacy", "default", "base"}:
+            folder = f"{dataset}_combined"
+        else:
+            folder = f"{dataset}_combined_{curr_strategy}"
+        return f"Experiments/KGE_Combined/{folder}/{model}_{embedding_dim}/eval_report.json"
+
+    candidates = [_candidate_path(curr_strategy) for curr_strategy in strategy_order]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return candidates[0]
+
+
+def get_kge_combined_table(
+    dataset1: str,
+    dataset2: str = None,
+    dataset3: str = None,
+    embedding_dim: int = 64,
+    approaches=None,
+):
+    """
+    Generate a test-only comparison table for up to three datasets.
+
+    Rows are grouped by base model and expanded into four variants:
+    - base KGE
+    - combined training (+LitEM)
+    - LiteralE
+    - KBLN
+
+    A single shared embedding dimension is enforced for every dataset
+    and every approach in the table.
+
+    The `approaches` argument selects which rows to include. Valid values:
+    - "base"
+    - "kbln"
+    - "literale"
+    - "litem"
+
+    Columns are:
+    - Model
+    - for each dataset: MRR, H@1, H@3, H@10
+    """
+
+    datasets = [dataset for dataset in (dataset1, dataset2, dataset3) if dataset]
+    if not datasets:
+        raise ValueError("At least one dataset must be provided.")
+    if len(datasets) > 3:
+        raise ValueError("A maximum of three datasets is supported.")
+    if embedding_dim is None:
+        raise ValueError("`embedding_dim` must be set to one shared value for the whole table.")
+
+    embedding_dim = int(embedding_dim)
+
+    base_models = ["ComplEx", "DeCaL", "DistMult", "DualE", "Keci", "OMult", "QMult" , "TransE"]
+    metrics = ("MRR", "H@1", "H@3", "H@10")
+    variant_map = {
+        "base": ("", "Experiments/KGE/{dataset}/{model}_{embedding_dim}/eval_report.json"),
+        "kbln": ("+KBLN", "Experiments/KGE_KBLN/{dataset}/{model}_{embedding_dim}/eval_report.json"),
+        "literale": ("+LiteralE", "Experiments/KGE_LiteralE/{dataset}/{model}_{embedding_dim}/eval_report.json"),
+        "litem": ("+LitEM", None),
+    }
+    if approaches is None:
+        approaches = ["base", "kbln", "literale", "litem"]
+
+    normalized_approaches = []
+    for approach in approaches:
+        key = str(approach).strip().lower()
+        if key not in variant_map:
+            raise ValueError(
+                f"Unknown approach `{approach}`. Valid options are: {', '.join(variant_map)}"
+            )
+        normalized_approaches.append(key)
+
+    if not normalized_approaches:
+        raise ValueError("At least one approach must be selected.")
+
+    variants = tuple((key, variant_map[key][0], variant_map[key][1]) for key in normalized_approaches)
+
+    columns = ["Model"]
+    for dataset in datasets:
+        columns.extend([f"{metric}_{dataset}" for metric in metrics])
+
+    def get_eval_path(dataset, model, approach_key, path_template):
+        if approach_key == "litem":
+            return _resolve_combined_eval_path(
+                dataset=dataset,
+                model=model,
+                embedding_dim=embedding_dim,
+                strategy="auto",
+            )
+        return path_template.format(
+            dataset=dataset,
+            model=model,
+            embedding_dim=embedding_dim,
+        )
+
+    def validate_shared_embedding_dim():
+        mismatches = []
+        for dataset in datasets:
+            for model in base_models:
+                for approach_key, suffix, path_template in variants:
+                    eval_path = get_eval_path(dataset, model, approach_key, path_template)
+                    if os.path.exists(eval_path):
+                        continue
+
+                    variant_dir = os.path.dirname(os.path.dirname(eval_path))
+                    if not os.path.isdir(variant_dir):
+                        continue
+
+                    prefix = f"{model}_"
+                    available_dims = sorted(
+                        entry[len(prefix):]
+                        for entry in os.listdir(variant_dir)
+                        if entry.startswith(prefix)
+                        and os.path.isdir(os.path.join(variant_dir, entry))
+                        and entry[len(prefix):].isdigit()
+                    )
+                    if available_dims and str(embedding_dim) not in available_dims:
+                        mismatches.append(
+                            f"{dataset} / {model}{suffix}: requested {embedding_dim}, available {', '.join(available_dims)}"
+                        )
+
+        if mismatches:
+            raise ValueError(
+                "Embedding dimension must be identical across all datasets and approaches. "
+                + "Mismatches found: "
+                + "; ".join(mismatches)
+            )
+
+    validate_shared_embedding_dim()
+
+    def extract_test_metrics(eval_path):
+        if not os.path.exists(eval_path):
+            return [""] * len(metrics)
+
+        with open(eval_path, "r") as handle:
+            eval_data = json.load(handle)
+
+        test_metrics = eval_data.get("Test", {})
+        return [test_metrics.get(metric, "") for metric in metrics]
+
+    data_rows = []
+    for base_model in base_models:
+        for variant_index, (approach_key, suffix, path_template) in enumerate(variants):
+            row_label = base_model if variant_index == 0 else suffix
+            row = [row_label]
+
+            for dataset in datasets:
+                eval_path = get_eval_path(dataset, base_model, approach_key, path_template)
+                row.extend(extract_test_metrics(eval_path))
+            data_rows.append(row)
+
+    df = pd.DataFrame(data_rows, columns=columns)
+    metric_columns = [column for column in df.columns if column != "Model"]
+    df = _bold_blockwise_maxima(df, len(variants), metric_columns)
+    df = _insert_dataset_spacer_columns(df, datasets, metrics)
+
+    for column in df.columns[1:]:
+        df[column] = df[column].map(_format_metric)
+
+    def insert_midrules(df_in):
+        new_rows = []
+
+        for index, base_model in enumerate(base_models):
+            start_row = index * len(variants)
+            block = df_in.iloc[start_row:start_row + len(variants)].copy()
+            new_rows.append(block)
+            if index != len(base_models) - 1:
+                new_rows.append(
+                    pd.DataFrame(
+                        [["\\midrule"] + [""] * (len(df_in.columns) - 1)],
+                        columns=df_in.columns,
+                    )
+                )
+
+        if not new_rows:
+            return df_in
+        return pd.concat(new_rows, ignore_index=True)
+
+    return insert_midrules(df)

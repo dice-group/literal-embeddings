@@ -1,6 +1,6 @@
 #!/bin/bash
 
-models=("ComplEx" "OMult" "QMult")
+models=("ComplEx" "OMult" "Keci" "QMult" "DistMult" "DeCaL" "TransE")
 datasets=("YAGO15k" "DB15K")
 epochs=300
 

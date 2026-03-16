@@ -2,7 +2,7 @@
 
 model="TransE"
 datasets=("FB15k-237" "DB15K" "YAGO15k" "Mutagenesis")
-exp_dir="Experiments/KGE_LitEm_all_triple"
+exp_dir="Experiments/KGE_LitEm_all_triples"
 
 for dataset in "${datasets[@]}"; do
   pretrained_path="${exp_dir}/${dataset}-${model}-128"

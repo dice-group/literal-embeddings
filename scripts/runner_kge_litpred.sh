@@ -1,12 +1,12 @@
 #!/bin/bash
 
-models=("ComplEx" "OMult" "Keci" "QMult" "DistMult" "Pykeen_RotatE")
+models=("ComplEx" "OMult" "Keci" "QMult" "DistMult" "DeCaL" "TransE")
 datasets=("YAGO15k" "FB15k-237")
 
 
 for model in "${models[@]}"; do
   for dataset in "${datasets[@]}"; do
-    exp_dir="Experiments/KGE_LitEm_all_triples/${dataset}-${model}-128"
+    exp_dir="Experiments/KGE/${dataset}/${model}_64"
 
     echo "==================================================="
     echo "Model: $model | Dataset: $dataset"
@@ -17,7 +17,7 @@ for model in "${models[@]}"; do
       --dataset_dir "KGs/$dataset" \
       --model "$model" \
       --literal_training \
-      --num_literal_runs 5 \
+      --num_literal_runs 1 \
       --pretrained_kge_path "$exp_dir" \
       --use_best_config
 
