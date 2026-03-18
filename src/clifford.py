@@ -2,19 +2,15 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from cliffordlayers.nn.modules.cliffordlinear import CliffordLinear
 from dicee.models.base_model import BaseKGE
-from src.clifford_utils import (
-    IdentityBladeAlgebra,
-    MultiVectorAct,
-    hypercomplex_multiply,
-    to_hypercomplex,
-)
+from src.clifford_utils import IdentityBladeAlgebra, MultiVectorAct
+from src.clifford_utils import  clifford_multiply, hypercomplex_multiply, to_hypercomplex
 try:
     from cliffordlayers.nn.modules.batchnorm import CliffordBatchNorm1d
 except Exception:  # pragma: no cover
     CliffordBatchNorm1d = None
-
 
 class CLNN_KGE(BaseKGE):
     def __init__(self, args, edge_index=None, edge_type=None, entity2idx=None):
@@ -50,6 +46,7 @@ class CLNN_KGE(BaseKGE):
             )
         else:
             self.clif_norm = nn.LayerNorm([self.C, self.n_blades])
+        self.modrelu_bias = nn.Parameter(torch.zeros(self.C))
 
         # KvsAll attention scorer.
         self.q_proj = CliffordLinear(g=self.g, in_channels=self.C, out_channels=self.C, bias=True)
@@ -68,42 +65,80 @@ class CLNN_KGE(BaseKGE):
         # Choose which scorer forward_k_vs_all uses.
         self.use_kvsall_attention = bool(args.get("use_kvsall_attention", False))
 
-    def _to_mv(self, x: torch.Tensor) -> torch.Tensor:
-        return to_hypercomplex(x, n_components=self.n_blades)
+    def hypercomplex_mul(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        return hypercomplex_multiply(a, b)
 
-    def _entity_mv(self) -> torch.Tensor:
-        return self._to_mv(self.entity_embeddings.weight)
+    def clifford_mul(self, a, b, g=None):
+        """Convenience wrapper around generic Clifford multiplication helper."""
+        if g is None:
+            g = self.g
+        return clifford_multiply(a, b, g)
 
-    def _query_encoder(self, emb_h: torch.Tensor, emb_r: torch.Tensor) -> torch.Tensor:
-        h_hc = to_hypercomplex(emb_h, n_components=self.n_blades)
-        r_hc = to_hypercomplex(emb_r, n_components=self.n_blades)
-        query = torch.cat([h_hc, r_hc], dim=1)
-        skip = self.skip_proj(query)
-        z = self.clif_in(query)
-        z = self.clif_norm(z)
-        z = self.mv_act(z)
-        z = self.clif_out(z)
-        return z + torch.sigmoid(self.res_gate) * skip
+    def modrelu(self, x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+        """
+        modReLU over blade dimension.
+        x: (B, C, I)
+        """
+        mag = torch.linalg.norm(x, dim=-1)  # (B, C)
+        scale = F.relu(mag + self.modrelu_bias.view(1, -1)) / (mag + eps)
+        return x * scale.unsqueeze(-1)
 
     def k_vs_all_score(self, emb_h: torch.Tensor, emb_r: torch.Tensor) -> torch.Tensor:
-        query = self._query_encoder(emb_h, emb_r)
-        entity_mv = self._entity_mv()
-        return torch.einsum("bci,eci->be", query, entity_mv)
+        """
+        emb_h: (B, embedding_dim)
+        emb_r: (B, embedding_dim)
+        Returns:
+            (B, num_entities)
+        """
+        h_hc = to_hypercomplex(emb_h, n_components=self.n_blades)
+        r_hc = to_hypercomplex(emb_r, n_components=self.n_blades)
+
+        x = torch.cat([h_hc, r_hc], dim=1)     # (B, 2C, I)
+        skip = self.skip_proj(x)               # (B, C, I)
+        z = self.clif_in(x)                     # (B, C, I)
+        z = self.clif_norm(z)
+        z = self.mv_act(z)
+        z = self.clif_out(z)                    # (B, C, I)
+        gate = torch.sigmoid(self.res_gate)
+        z = z + gate * skip
+
+        ent_hc = to_hypercomplex(self.entity_embeddings.weight, n_components=self.n_blades)
+        scores = torch.einsum("bci,eci->be", z, ent_hc)
+        return scores
 
     def k_vs_all_attention_score(self, emb_h: torch.Tensor, emb_r: torch.Tensor) -> torch.Tensor:
-        hr_hc = hypercomplex_multiply(self._to_mv(emb_h), self._to_mv(emb_r))
-        query = self.q_proj(hr_hc)
-        entity_mv = self._entity_mv()
-        key = self.k_proj(entity_mv)
-        value = self.v_proj(entity_mv)
+        """
+        True entity-attention KvsAll:
+        1) Build Q from h,r.
+        2) Attend over all entity keys K and values V.
+        3) Fuse context with Q and rescore against K.
+        """
+        h_hc = to_hypercomplex(emb_h, n_components=self.n_blades)
+        r_hc = to_hypercomplex(emb_r, n_components=self.n_blades)
+        hr_hc = self.hypercomplex_mul(h_hc, r_hc)
 
-        logits = torch.einsum("bci,eci->bie", query, key)
+        Q = self.q_proj(hr_hc)  # (B, C, I)
+
+        ent_hc = to_hypercomplex(self.entity_embeddings.weight, n_components=self.n_blades)
+        K_all = self.k_proj(ent_hc)  # (E, C, I)
+        V_all = self.v_proj(ent_hc)  # (E, C, I)
+
+        # Multi-head over blades: each blade is one head.
+        # complex -> 2 heads, quaternion -> 4 heads.
+        logits = torch.einsum("bci,eci->bie", Q, K_all)  # (B, n_blades, E)
         attn = torch.softmax(logits, dim=-1)
+
         attn = self.attn_dropout(attn)
-        context = torch.einsum("bie,eci->bci", attn, value)
-        fused = torch.cat([query, torch.sigmoid(self.context_gate) * context], dim=1)
-        refined_query = self.fuse_proj(fused)
-        return torch.einsum("bci,eci->be", refined_query, key) / math.sqrt(self.embedding_dim)
+
+        # Per-head (per-blade) context aggregation.
+        context = torch.einsum("bie,eci->bci", attn, V_all)
+
+        fused = torch.cat([Q, torch.sigmoid(self.context_gate) * context], dim=1)  # (B, 2C, I)
+        Q2 = self.fuse_proj(fused)  # (B, C, I)
+
+        scores = torch.einsum("bci,eci->be", Q2, K_all)
+        scores = scores / math.sqrt(self.embedding_dim)
+        return scores
 
     def forward_k_vs_all(self, x: torch.Tensor) -> torch.Tensor:
         emb_head, emb_rel = self.get_head_relation_representation(x)
