@@ -314,6 +314,12 @@ def get_default_arguments(args_list=None):
         help="Log the validation loss of the training process",
     )
     parser.add_argument(
+        "--clifford_attention",
+        action="store_true",
+        default=False,
+        help="KvsAll attention in CLNN_KGE",
+    )
+    parser.add_argument(
         "--test_runs",
         action="store_true",
         default=False,

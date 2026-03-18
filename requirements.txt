@@ -1,2 +1,5 @@
-git+https://github.com/dice-group/dice-embeddings.git@de3801e#egg=dicee
+torch --index-url https://download.pytorch.org/whl/cu130
+git+https://github.com/dice-group/dice-embeddings.git@f38d9b7#egg=dicee
+-r https://raw.githubusercontent.com/dice-group/dice-embeddings/f38d9b7/requirements.txt
 pre-commit
+cliffordlayers

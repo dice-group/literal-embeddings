@@ -33,7 +33,7 @@ class OnevsAllDataset(torch.utils.data.Dataset):
         y_vec = torch.zeros(self.target_dim)
         triple= torch.from_numpy(self.train_data[idx].copy()).long()
         y_vec[triple[2]] = 1
-        return triple[:2], y_vec, triple[2]
+        return triple[:2], y_vec
 
 
 class KvsAll(torch.utils.data.Dataset):
@@ -99,7 +99,6 @@ class KvsAll(torch.utils.data.Dataset):
         return len(self.train_data)
 
     def __getitem__(self, idx):
-        # 1. Initialize a vector of output.
         y_vec = torch.zeros(self.target_dim)
         y_vec[self.train_target[idx]] = 1.0
-        return self.train_data[idx], y_vec, self.train_target[idx]
+        return self.train_data[idx], y_vec

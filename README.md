@@ -8,8 +8,8 @@ This repository is trimmed to the training pipeline for:
 ## Setup
 
 ```bash
-conda create --name litem python=3.10
-conda activate litem
+conda create --name clifnn python=3.11
+conda activate clifnn
 pip install -r requirements.txt
 ```
 

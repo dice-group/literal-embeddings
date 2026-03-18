@@ -20,25 +20,14 @@ class KGETrainingModule(LightningModule):
         return self.kge_model(x)
 
     def training_step(self, batch,  batch_idx):
-        #get batch_data
-        if isinstance(batch, (list, tuple)) and len(batch) == 3:
-            train_X, train_y, _ = batch
-        elif isinstance(batch, (list, tuple)) and len(batch) == 2:
-            train_X, train_y = batch
-        else:
-            raise ValueError(f"Unexpected batch format in training_step: {type(batch)}")
+        train_X, train_y = batch
         yhat_e = self.kge_model.forward(train_X)  # (batch_size, num_entities)
         ent_loss = self.bce_loss_fn(yhat_e, train_y)
         self.log("ent_loss", ent_loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=train_X.size(0))
         return ent_loss
 
     def validation_step(self, batch):
-        if isinstance(batch, (list, tuple)) and len(batch) == 3:
-            val_X, val_y, _ = batch
-        elif isinstance(batch, (list, tuple)) and len(batch) == 2:
-            val_X, val_y = batch
-        else:
-            raise ValueError(f"Unexpected batch format in validation_step: {type(batch)}")
+        val_X, val_y = batch
         yhat_val = self.kge_model(val_X)
         val_loss = self.bce_loss_fn(yhat_val, val_y)
         self.log("ent_loss_val", val_loss, on_step=True, on_epoch=True)

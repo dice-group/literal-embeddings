@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import shutil
 from datetime import datetime
 
 import pandas as pd
@@ -46,6 +47,24 @@ def save_kge_experiments(args, loss_log=None):
         json.dump(vars(args), f, indent=4)
 
 
+def clear_directory_contents(path: str):
+    if not path:
+        raise ValueError("Refusing to clear an empty path.")
+    normalized_path = os.path.abspath(path)
+    if normalized_path in {os.path.abspath(os.sep), os.path.expanduser("~")}:
+        raise ValueError(f"Refusing to clear unsafe path: {normalized_path}")
+    if not os.path.isdir(normalized_path):
+        os.makedirs(normalized_path, exist_ok=True)
+        return
+
+    for name in os.listdir(normalized_path):
+        entry_path = os.path.join(normalized_path, name)
+        if os.path.isdir(entry_path) and not os.path.islink(entry_path):
+            shutil.rmtree(entry_path)
+        else:
+            os.unlink(entry_path)
+
+
 def get_callbacks(args):
     callbacks = [EpochLevelProgressBar()]
     if args.early_stopping:
@@ -78,15 +97,8 @@ def get_callbacks(args):
 
 
 def collate_fn(batch):
-    xs, y_vecs, targets = zip(*batch)
-    xs = torch.stack(xs)
-    y_vecs = torch.stack(y_vecs)
-    if isinstance(targets, tuple) and isinstance(targets[0], list):
-        targets = [torch.as_tensor(t, dtype=torch.long) for t in targets]
-        targets = torch.cat(targets, dim=0)
-    else:
-        targets = torch.stack(targets)
-    return xs, y_vecs, targets
+    xs, y_vecs = zip(*batch)
+    return torch.stack(xs), torch.stack(y_vecs)
 
 
 def get_dataloaders(args, entity_dataset):
@@ -137,6 +149,7 @@ def get_dataloaders(args, entity_dataset):
             batch_size=args.batch_size,
             shuffle=False,
             num_workers=7,
+            collate_fn=collate_fn,
         )
 
     return train_dataloader, valid_dataloader

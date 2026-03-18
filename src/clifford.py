@@ -63,7 +63,7 @@ class CLNN_KGE(BaseKGE):
         )
 
         # Choose which scorer forward_k_vs_all uses.
-        self.use_kvsall_attention = bool(args.get("use_kvsall_attention", False))
+        self.clifford_attention = bool(args.get("clifford_attention", False))
 
     def hypercomplex_mul(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return hypercomplex_multiply(a, b)
@@ -142,7 +142,7 @@ class CLNN_KGE(BaseKGE):
 
     def forward_k_vs_all(self, x: torch.Tensor) -> torch.Tensor:
         emb_head, emb_rel = self.get_head_relation_representation(x)
-        if self.use_kvsall_attention:
+        if self.clifford_attention:
             return self.k_vs_all_attention_score(emb_h=emb_head, emb_r=emb_rel)
         return self.k_vs_all_score(emb_h=emb_head, emb_r=emb_rel)
 

@@ -8,6 +8,7 @@ from dicee.static_funcs import  read_or_load_kg, store
 from src.abstracts import KGETrainer
 from src.trainer import KGETrainingModule
 from src.static_funcs import (
+    clear_directory_contents,
     get_callbacks,
     get_dataloaders,
     get_full_storage_path,
@@ -20,7 +21,7 @@ def train_kge_model(args):
     # Set up experiment storage path
     args.learning_rate = args.lr
     args.full_storage_path = get_full_storage_path(args)
-    os.makedirs(args.full_storage_path, exist_ok=True)
+    clear_directory_contents(args.full_storage_path)
     print("Training dir", args.full_storage_path)
 
     # Device and seed setup
