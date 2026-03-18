@@ -1,4 +1,3 @@
-### KGE Training Runner
 import os
 import torch
 
@@ -7,12 +6,17 @@ from dicee.knowledge_graph import KG
 from dicee.static_funcs import  read_or_load_kg, store
 
 from src.abstracts import KGETrainer
-from src.trainer import KGE_Literal
-from src.static_funcs import evaluate_lit_preds, save_kge_experiments, get_full_storage_path
-from src.static_train_utils import get_callbacks, get_dataloaders, get_literal_components, get_model
+from src.trainer import KGETrainingModule
+from src.static_funcs import (
+    get_callbacks,
+    get_dataloaders,
+    get_full_storage_path,
+    get_model,
+    save_kge_experiments,
+)
 
 def train_kge_model(args):
-    """Train a KGE model with optional literal embeddings."""
+    """Train a KGE model."""
     # Set up experiment storage path
     args.learning_rate = args.lr
     args.full_storage_path = get_full_storage_path(args)
@@ -37,17 +41,10 @@ def train_kge_model(args):
     print(
         f"KGE parameters: trainable={trainable_params:,}, total={total_params:,}"
     )
-    literal_dataset, Literal_model = None, None
-
-    # Combined training and literal model setup
-    if args.combined_training:
-        literal_dataset, Literal_model = get_literal_components(args, entity_dataset)
 
     # Evaluator and Lightning module
     evaluator = Evaluator(args=args)
-    lightning_module = KGE_Literal(
-        kge_model, Literal_model, args, literal_dataset
-    )
+    lightning_module = KGETrainingModule(kge_model, args)
 
     # set validation epochs
     check_val_epochs = 1 if args.log_validation and valid_dataloader else None
@@ -70,22 +67,14 @@ def train_kge_model(args):
     # Training
     trainer.fit(lightning_module, train_dataloader, valid_dataloader)
 
-    # Literal evaluation if needed
-    lit_results = None
-    if args.combined_training and not args.skip_eval_literals:
-        lit_results = evaluate_lit_preds( literal_dataset, dataset_type="test", 
-         model=lightning_module.kge_model, literal_model=lightning_module.Literal_model, device=args.device )
-
     # Save experiment results
     if args.save_experiment:
         store(trained_model=lightning_module.kge_model, model_name="model",
             full_storage_path=args.full_storage_path,
             save_embeddings_as_csv=args.save_embeddings_as_csv
         )
-        if literal_dataset:
-            save_kge_experiments(args=args, loss_log={}, lit_results=lit_results, attr_to_idx=literal_dataset.data_property_to_idx)
-        else:
-            save_kge_experiments(args=args, loss_log={})
-        print( f"Experiment for {args.model} + {args.embedding_dim} (combined={args.combined_training})"
-               f"completed and stored at {args.full_storage_path}"
+        save_kge_experiments(args=args, loss_log={})
+        print(
+            f"Experiment for {args.model} + {args.embedding_dim} "
+            f"completed and stored at {args.full_storage_path}"
         )

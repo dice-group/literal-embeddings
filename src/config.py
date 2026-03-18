@@ -18,12 +18,6 @@ def get_default_arguments(args_list=None):
         ",e.g., KGs/UMLS",
     )
     parser.add_argument(
-        "--pretrained_kge_path",
-        type=str,
-        default=None,
-        help="The path of a folder containing Pretrained KGE model to train Literal Embedding Model",
-    )
-    parser.add_argument(
         "--sparql_endpoint",
         type=str,
         default=None,
@@ -143,8 +137,6 @@ def get_default_arguments(args_list=None):
         help="Mini batch size. If None, automatic batch finder is applied",
     )
     parser.add_argument("--lr", type=float, default=0.05)
-    parser.add_argument("--lit_lr", type=float, default=0.001)
-    parser.add_argument("--lit_epochs", type=int, default=200)
     parser.add_argument(
         "--callbacks",
         type=json.loads,
@@ -304,40 +296,6 @@ def get_default_arguments(args_list=None):
         "--degree", type=int, default=0, help="degree for polynomial embeddings"
     )
     parser.add_argument(
-        "--alpha", type=int, default=1, help="Weight of KGE Model for combined Training"
-    )
-    parser.add_argument(
-        "--beta",
-        type=int,
-        default=1,
-        help="Weight of Literal Embedding Model for combined Training",
-    )
-    parser.add_argument(
-        "--combined_training",
-        action="store_true",
-        default=False,
-        help="Combined Training of KGE and Literal Embedding Model",
-    )
-    parser.add_argument(
-        "--literal_training",
-        action="store_true",
-        default=False,
-        help="Training of  Literal Embedding Model",
-    )
-    parser.add_argument(
-        "--literal_model",
-        type=str,
-        default="mlp",
-        choices=["mlp", "clifford"],
-        help="Type of literal embedding model to use. Choices: 'mlp' (MLP-based) or 'clifford' (Clifford algebra-based). Default: 'mlp'",
-    )
-    parser.add_argument(
-        "--skip_eval_literals",
-        action="store_true",
-        default=False,
-        help="Skip evaluation of Literals on Test set.",
-    )
-    parser.add_argument(
         "--save_experiment",
         action="store_true",
         default=True,
@@ -348,18 +306,6 @@ def get_default_arguments(args_list=None):
         action="store_true",
         default=True,
         help="apply_reciprical_or_noise",
-    )
-    parser.add_argument(
-        "--lit_norm",
-        type=str,
-        default="z-norm",
-        help="Normalization of Literal Datasets",
-    )
-    parser.add_argument(
-        "--num_literal_runs",
-        type=int,
-        default=1,
-        help="Number of runs for Literal Embedding Model",
     )
     parser.add_argument(
         "--log_validation",
@@ -374,12 +320,6 @@ def get_default_arguments(args_list=None):
         help="Test run checker",
     )
     parser.add_argument(
-        "--lit_sampling_ratio",
-        type=float,
-        default=None,
-        help="Use to evaluate Literal Embedding model with decreased training ratio",
-    )
-    parser.add_argument(
         "--train_all_triples",
         action="store_true",
         default=False,
@@ -391,44 +331,6 @@ def get_default_arguments(args_list=None):
         default=False,
         help="Early stopping for training",
     )
-    parser.add_argument(
-        "--deferred_literal_training_epochs",
-        type=int,
-        default=0,
-        help="Number of epochs for deferred literal training for KGE Model. Set to 0 to disable.",
-    )
-    parser.add_argument(
-        "--gate_residual",
-        action="store_true",
-        default=True,
-        help="Use gate residual connections in Literal Embedding Model.",
-    )
-    parser.add_argument(
-        "--freeze_entity_embeddings_combined",
-        action="store_true",
-        default=False,
-        help="Freeze entity embeddings during combined training.",
-    )
-    parser.add_argument(
-        "--use_clifford_attention",
-        action="store_true",
-        default=True,
-        help="Use Clifford attention mechanism in Clifford Literal Embedding Model.",
-    )
-    parser.add_argument(
-        "--no_residual",
-        action="store_true",
-        default=False,
-        help="Disable residual connections in Literal Embedding Model.",
-    )
-    parser.add_argument(
-        "--multi_regression",
-        action="store_true",
-        help="Perform multi-output regression for Literal Embedding model.",
-    )
-    parser.add_argument("--update_entity_embeddings", action="store_true", default=False,
-                   help="Allow entity embeddings to be updated during training")
-    
      # Learning rate scheduling with configuration
     parser.add_argument("--adaptive_lr", type=json.loads, default={},
                         help='Enable adaptive learning rate scheduling with configuration. '
@@ -446,7 +348,4 @@ def get_default_arguments(args_list=None):
     parser.add_argument("--n_epochs_eval_model", type=str, default="val_test",
                         choices=["None", "train", "train_val", "train_val_test", "val_test", "val", "train_test","test"],
                         help='Evaluating link prediction performance on data splits while performing periodic evaluation.')
-    parser.add_argument("--use_best_config", action='store_true', default=False,
-                        help='Use the best configuration found during hyperparameter search.')
-
     return parser.parse_args(args_list)

@@ -20,7 +20,6 @@ def test_clnn_kge_kvsall_minimal_run():
     args.num_epochs = 1
     args.batch_size = 1024
     args.lr = 0.01
-    args.use_literals = False
     args.test_runs = True
     args.save_experiment = False
 

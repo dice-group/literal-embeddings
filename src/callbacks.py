@@ -1,4 +1,3 @@
-import pandas as pd
 import torch
 from pytorch_lightning import Callback
 from pytorch_lightning.callbacks import TQDMProgressBar
@@ -7,8 +6,6 @@ from tqdm import tqdm
 import os
 import json
 from collections import defaultdict
-from src.dataset import LiteralDataset
-from src.model import LiteralEmbeddings
 from dicee.static_funcs import save_checkpoint_model
 
 
@@ -37,7 +34,7 @@ class EpochLevelProgressBar(TQDMProgressBar):
         postfix_parts = []
 
         # Collect specific metrics to display in the progress bar
-        for key in ["ent_loss", "lit_loss"]:
+        for key in ["ent_loss"]:
             value = metrics.get(key)
             if value is not None:
                 # Convert tensor values to Python scalars if necessary
